@@ -88,8 +88,6 @@ class App:
 
         self.minesweeper = MinesweeperBoard(10, 10, 10, 0)
 
-        self.texture_atlas = self.load_texture("textures/atlas.png")
-
         cell_size = 0.1 # size of a cell side in meters
         self.field_quad = FieldQuad(cell_size=cell_size, minesweeper=self.minesweeper)
 
@@ -97,23 +95,6 @@ class App:
         fragment_shader = compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER)
         self.shader_program = compileProgram(vertex_shader, fragment_shader)
         glUseProgram(self.shader_program)
-
-    def load_texture(self, texture_path):
-        image = Image.open(texture_path)
-        image = image.transpose(Image.FLIP_TOP_BOTTOM)
-        img_data = np.array(image).astype(np.uint8)
-
-        texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, texture)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
-        glGenerateMipmap(GL_TEXTURE_2D)
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-
-        return texture
 
     def mainloop(self):
         fov = np.radians(45)
@@ -189,6 +170,20 @@ class FieldQuad:
                                [0.0, 0.0, 1.0, 0.0],
                                [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
 
+        image = Image.open("textures/atlas.png")
+        image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        img_data = np.array(image).astype(np.uint8)
+
+        self.texture_atlas = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.texture_atlas)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, MinesweeperCell.texture_atlas_size[0], MinesweeperCell.texture_atlas_size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+        glGenerateMipmap(GL_TEXTURE_2D)
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
         self.create_buffer(cell_size=cell_size, minesweeper=minesweeper)
 
     def create_buffer(self, cell_size, minesweeper):
@@ -262,10 +257,12 @@ class FieldQuad:
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
     
+    # TODO: Fix the __del__ method????
     # def __del__(self):
     #     glDeleteVertexArrays(1, self.vao)
     #     glDeleteBuffers(1, self.vbo)
     #     glDeleteBuffers(1, self.ebo)
+    #     glDeleteTextures(1, self.texture_atlas)
 
 if __name__ == "__main__":
     app = App()
