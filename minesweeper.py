@@ -73,6 +73,19 @@ class MinesweeperBoard:
         cell.flagged = not cell.flagged
 
 class MinesweeperCell:
+    texture_files = {0: "textures/0.png",
+                     1: "textures/1.png",
+                     2: "textures/2.png",
+                     3: "textures/3.png",
+                     4: "textures/4.png",
+                     5: "textures/5.png",
+                     6: "textures/6.png",
+                     7: "textures/7.png",
+                     8: "textures/8.png",
+                     9: "textures/mine.png",
+                     10: "textures/flag.png",
+                     11: "textures/unrevealed.png"}
+
     def __init__(self,
                  bomb: bool = False):
         self.bomb = bomb
