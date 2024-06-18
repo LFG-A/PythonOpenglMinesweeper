@@ -49,10 +49,7 @@ class MinesweeperBoard:
                     if cell is not adjacent_cell:
                         cell.adjacent_cells.append(adjacent_cell)
 
-    def reveal_cell(self,
-                    x: int,
-                    y: int):
-        cell = self.board[y * self.size_x + x]
+    def reveal_cell(self, cell: "MinesweeperCell"):
         cell.revealed = True
         self.revealed_cells += 1
 
@@ -66,25 +63,54 @@ class MinesweeperBoard:
 
         return True
 
-    def flag_cell(self,
-                  x: int,
-                  y: int):
-        cell = self.board[y * self.size_x + x]
+    def flag_cell(self, cell: "MinesweeperCell"):
         cell.flagged = not cell.flagged
+    
+    def get_cell(self, x: int, y: int):
+        return self.board[y * self.size_x + x]
+
+    def print(self):
+        for y in range(self.size_y):
+            for x in range(self.size_x):
+                print(f"{self.get_cell(x, y)}", end=" ")
+            print()
 
 class MinesweeperCell:
-    texture_files = {0: "textures/0.png",
-                     1: "textures/1.png",
-                     2: "textures/2.png",
-                     3: "textures/3.png",
-                     4: "textures/4.png",
-                     5: "textures/5.png",
-                     6: "textures/6.png",
-                     7: "textures/7.png",
-                     8: "textures/8.png",
-                     9: "textures/mine.png",
-                     10: "textures/flag.png",
-                     11: "textures/unrevealed.png"}
+    textures_file_paths = {0: "textures/0.png",
+                          1: "textures/1.png",
+                          2: "textures/2.png",
+                          3: "textures/3.png",
+                          4: "textures/4.png",
+                          5: "textures/5.png",
+                          6: "textures/6.png",
+                          7: "textures/7.png",
+                          8: "textures/8.png",
+                          9: "textures/mine.png",
+                          10: "textures/flag.png",
+                          11: "textures/unrevealed.png"}
+    textures_size = (128, 128)
+
+    texture_atlas_path = "textures/atlas.png"
+    texture_atlas_size = (512, 384)
+    texture_atlas_positions = {0: [(0, 0), (127, 0), (0, 127), (127, 127)],
+                               1: [(128, 0), (256, 0), (127, 127), (255, 127)],
+                               2: [(256, 0), (384, 0), (255, 127), (383, 127)],
+                               3: [(384, 0), (512, 0), (383, 127), (511, 127)],
+                               4: [(0, 128), (127, 128), (0, 255), (127, 255)],
+                               5: [(128, 128), (256, 128), (127, 255), (255, 255)],
+                               6: [(256, 128), (384, 128), (255, 255), (383, 255)],
+                               7: [(384, 128), (512, 128), (383, 255), (511, 255)],
+                               8: [(0, 256), (127, 256), (0, 383), (127, 383)],
+                               9: [(128, 256), (256, 256), (127, 383), (255, 383)],
+                               10:[(256, 256), (384, 256), (255, 383), (383, 383)],
+                               11:[(384, 256), (512, 256), (383, 383), (511, 383)]}
+
+    @staticmethod
+    def get_atlas_coords(cell: "MinesweeperCell"):
+        vt = []
+        for coord in MinesweeperCell.texture_atlas_positions[cell.get_texture_index()]:
+            vt.append((coord[0] / MinesweeperCell.texture_atlas_size[0], coord[1] / MinesweeperCell.texture_atlas_size[1]))
+        return vt
 
     def __init__(self,
                  bomb: bool = False):
@@ -95,6 +121,16 @@ class MinesweeperCell:
 
         self.adjacent_cells = []
 
+    def get_texture_index(self):
+        if self.revealed:
+            if self.bomb:
+                return 9
+            else:
+                return self.adjacent_bombs
+        if self.flagged:
+            return 10
+        return 11
+
     def __str__(self):
         if self.bomb:
             return "+"
@@ -102,9 +138,6 @@ class MinesweeperCell:
             return f"{self.adjacent_bombs}"
 
 if __name__ == "__main__":
-    mboard = MinesweeperBoard(20, 10, 20)
-    mboard = MinesweeperBoard(10, 10, 10, 1)
-    for y in range(mboard.size_y):
-        for x in range(mboard.size_x):
-            print(f"{mboard.board[y * mboard.size_x + x]}", end=" ")
-        print()
+    mboard = MinesweeperBoard(20, 10, 20, 1)
+    # mboard = MinesweeperBoard(10, 10, 10, 1)
+    mboard.print()

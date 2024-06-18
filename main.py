@@ -2,10 +2,46 @@ import numpy as np
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 import glfw
+from PIL import Image
 
 from minesweeper import *
 
-vertex_shader_source = """
+VERTEX_SHADER = """
+#version 330 core
+
+layout (location = 0) in vec3 position;
+layout (location = 1) in vec2 texCoords;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec2 TexCoords;
+
+void main()
+{
+    vec4 worldPosition = vec4(position, 1.0) * model;
+    gl_Position = projection * view * worldPosition;
+    texCoords = texCoords;
+}
+
+"""
+
+FRAGMENT_SHADER = """
+#version 330 core
+out vec4 FragColor;
+
+in vec2 texCoords;
+
+uniform sampler2D texture1;
+
+void main()
+{
+    FragColor = texture(texture1, texCoords);
+}
+"""
+
+VERTEX_SHADER = """
 #version 330 core
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 texCoords;
@@ -19,7 +55,7 @@ void main()
 }
 """
 
-fragment_shader_source = """
+FRAGMENT_SHADER = """
 #version 330 core
 out vec4 FragColor;
 
@@ -49,38 +85,20 @@ class App:
             return
 
         glfw.make_context_current(self.window)
+        glEnable(GL_DEPTH_TEST)
+        glClearColor(0.1, 0.1, 0.1, 1.0)
 
-        self.board = MinesweeperBoard(10, 10, 10, 0)
+        self.minesweeper = MinesweeperBoard(10, 10, 10, 0)
 
-    def mainloop(self):
-        while not glfw.window_should_close(self.window):
-            glfw.poll_events()
-            self.manage_input()
-            self.render()
-        glfw.terminate()
+        self.texture_atlas = self.load_texture("textures/atlas.png")
 
-    def manage_input(self):
-        pass
+        cell_size = 0.1 # size of a cell side in meters
+        self.field_quad = FieldQuad(cell_size=cell_size, minesweeper=self.minesweeper)
 
-    def render(self):
-        glClear(GL_COLOR_BUFFER_BIT)
-
-        # TODO: render all
-
-        glfw.swap_buffers(self.window)
-
-from PIL import Image
-
-class Quad:
-    def __init__(self, width, height, x, y, texture_path):
-        self.width = width
-        self.height = height
-        self.x = x
-        self.y = y
-        self.texture_path = texture_path
-        self.texture = self.load_texture(texture_path)
-        self.shader_program = self.create_shader_program()
-        self.vao = self.create_vao()
+        vertex_shader = compileShader(VERTEX_SHADER, GL_VERTEX_SHADER)
+        fragment_shader = compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER)
+        self.shader_program = compileProgram(vertex_shader, fragment_shader)
+        glUseProgram(self.shader_program)
 
     def load_texture(self, texture_path):
         image = Image.open(texture_path)
@@ -99,37 +117,107 @@ class Quad:
 
         return texture
 
-    def create_shader_program(self):
-        vertex_shader = compileShader(vertex_shader_source, GL_VERTEX_SHADER)
-        fragment_shader = compileShader(fragment_shader_source, GL_FRAGMENT_SHADER)
-        shader_program = compileProgram(vertex_shader, fragment_shader)
-        return shader_program
+    def mainloop(self):
+        view = np.array([[0.0, 1.0, 0.0, 0.0],
+                         [0.0, 0.0, 1.0, 0.0],
+                         [-1.0, 0.0, 0.0, 0.0],
+                         [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
 
-    def create_vao(self):
+        view_loc = glGetUniformLocation(self.shader_program, "view")
+        glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
+
+        fov = np.radians(45)
+        aspect = self.pixel_x / self.pixel_y
+        near = 0.1
+        far = 100.0
+
+        f = 1.0 / np.tan(fov / 2.0)
+        a = (far + near) / (near - far)
+        b = (2.0 * far * near) / (near - far)
+
+        projection = np.array([[f / aspect, 0, 0, 0],
+                               [0, f, 0, 0],
+                               [0, 0, a, -1],
+                               [0, 0, b, 0]], dtype=np.float32)
+
+        proj_loc = glGetUniformLocation(self.shader_program, "projection")
+        glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection)
+
+        while not glfw.window_should_close(self.window):
+            glfw.poll_events()
+            self.manage_input()
+            self.render()
+        glfw.terminate()
+
+    def manage_input(self):
+        if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
+            glfw.set_window_should_close(self.window, True)
+            return
+
+        if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
+            self.minesweeper.print()
+            print()
+
+    def render(self):
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        self.field_quad.render(self.shader_program)
+
+        glfw.swap_buffers(self.window)
+
+class FieldQuad:
+    def __init__(self, cell_size, minesweeper):
+        self.model = np.array([[1.0, 0.0, 0.0, 0.0],
+                               [0.0, 1.0, 0.0, 0.0],
+                               [0.0, 0.0, 1.0, 0.0],
+                               [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
+
+        self.create_buffer(cell_size=cell_size, minesweeper=minesweeper)
+
+    def create_buffer(self, cell_size, minesweeper):
         vertices = [
-            # positions         # texture coords
-            0.5,  0.5, 0.0,    1.0, 1.0,
-            0.5, -0.5, 0.0,    1.0, 0.0,
-           -0.5, -0.5, 0.0,    0.0, 0.0,
-           -0.5,  0.5, 0.0,    0.0, 1.0
-        ]
-        indices = [
-            0, 1, 3,
-            1, 2, 3
-        ]
+            # positions      # texture coords
+            -1.0,  1.0, 0.0, 0.0, 0.4,
+            -1.0, -1.0, 0.0, 0.0, 0.6,
+             1.0, -1.0, 0.0, 0.2, 0.6,
+             1.0,  1.0, 0.0, 0.2, 0.4]
+        indices = [0, 1, 2, 0, 2, 3]
+
+        size_x, size_y = minesweeper.size_x, minesweeper.size_y
+        for y in range(size_y):
+            y_pos = y*cell_size
+            for x in range(size_x):
+                v0 = (x*cell_size, y_pos, 0)
+                v1 = (x*cell_size, y_pos + cell_size, 0)
+                v2 = (x*cell_size + cell_size, y_pos, 0)
+                v3 = (x*cell_size + cell_size, y_pos + cell_size, 0)
+                vts = MinesweeperCell.get_atlas_coords(minesweeper.get_cell(x, y))
+
+                vertices.extend(v0)
+                vertices.extend(vts[0])
+                vertices.extend(v1)
+                vertices.extend(vts[1])
+                vertices.extend(v2)
+                vertices.extend(vts[2])
+                vertices.extend(v3)
+                vertices.extend(vts[3])
+
+                offset = y * size_x + x * 20
+                indices.extend([offset, offset+1, offset+2, offset+1, offset+2, offset+3])
+
         vertices = np.array(vertices, dtype=np.float32)
         indices = np.array(indices, dtype=np.uint32)
 
-        vao = glGenVertexArrays(1)
-        vbo = glGenBuffers(1)
-        ebo = glGenBuffers(1)
+        self.vao = glGenVertexArrays(1)
+        self.vbo = glGenBuffers(1)
+        self.ebo = glGenBuffers(1)
 
-        glBindVertexArray(vao)
+        glBindVertexArray(self.vao)
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
         glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
 
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(0))
@@ -142,15 +230,21 @@ class Quad:
         glBindVertexArray(0)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-        return vao
+    def set_model_transformation(self, model):
+        self.model = model
 
-    def render(self):
-        glUseProgram(self.shader_program)
+    def render(self, shader_program):
+        model_loc = glGetUniformLocation(shader_program, "model")
+        glUniformMatrix4fv(model_loc, 1, GL_FALSE, self.model)
+
         glBindVertexArray(self.vao)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
-        glUseProgram(0)
+    
+    # def __del__(self):
+    #     glDeleteVertexArrays(1, self.vao)
+    #     glDeleteBuffers(1, self.vbo)
+    #     glDeleteBuffers(1, self.ebo)
 
 if __name__ == "__main__":
     app = App()
