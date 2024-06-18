@@ -27,20 +27,6 @@ void main()
 
 """
 
-FRAGMENT_SHADER = """
-#version 330 core
-out vec4 FragColor;
-
-in vec2 texCoords;
-
-uniform sampler2D texture1;
-
-void main()
-{
-    FragColor = texture(texture1, texCoords);
-}
-"""
-
 VERTEX_SHADER = """
 #version 330 core
 layout(location = 0) in vec3 position;
@@ -52,6 +38,20 @@ void main()
 {
     gl_Position = vec4(position, 1.0);
     TexCoords = texCoords;
+}
+"""
+
+FRAGMENT_SHADER = """
+#version 330 core
+out vec4 FragColor;
+
+in vec2 texCoords;
+
+uniform sampler2D texture1;
+
+void main()
+{
+    FragColor = texture(texture1, texCoords);
 }
 """
 
