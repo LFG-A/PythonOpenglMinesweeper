@@ -72,7 +72,18 @@ class MinesweeperBoard:
     def print(self):
         for y in range(self.size_y):
             for x in range(self.size_x):
-                print(f"{self.get_cell(x, y)}", end=" ")
+                print(f"{self.get_cell(x, y)}", end="")
+            print()
+    
+    def game_print(self):
+        for y in range(self.size_y):
+            for x in range(self.size_x):
+                cell = self.get_cell(x, y)
+                if cell.revealed:
+                    print(f"{cell}", end="")
+                else:
+                    char = 'F' if cell.flagged else '\u2588'
+                    print(f"{char}", end="")
             print()
 
 class MinesweeperCell:
@@ -133,11 +144,24 @@ class MinesweeperCell:
 
     def __str__(self):
         if self.bomb:
-            return "+"
+            return '\u00A4'
         else:
+            if self.adjacent_bombs == 0:
+                return '\u2591'
             return f"{self.adjacent_bombs}"
 
 if __name__ == "__main__":
     mboard = MinesweeperBoard(20, 10, 20, 1)
     # mboard = MinesweeperBoard(10, 10, 10, 1)
     mboard.print()
+    print()
+    mboard.game_print()
+    print()
+    mboard.reveal_cell(mboard.get_cell(0, 0))
+    mboard.game_print()
+    print()
+    mboard.reveal_cell(mboard.get_cell(8, 0))
+    mboard.game_print()
+    print()
+    mboard.reveal_cell(mboard.get_cell(13, 0))
+    mboard.game_print()
