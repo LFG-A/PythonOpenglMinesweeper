@@ -27,6 +27,7 @@ void main()
 
 """
 
+''' # TODO: Fix the VERTEX_SHADER
 VERTEX_SHADER = """
 #version 330 core
 layout(location = 0) in vec3 position;
@@ -40,20 +41,7 @@ void main()
     TexCoords = texCoords;
 }
 """
-
-FRAGMENT_SHADER = """
-#version 330 core
-out vec4 FragColor;
-
-in vec2 texCoords;
-
-uniform sampler2D texture1;
-
-void main()
-{
-    FragColor = texture(texture1, texCoords);
-}
-"""
+'''
 
 FRAGMENT_SHADER = """
 #version 330 core
@@ -87,11 +75,15 @@ class App:
         glfw.make_context_current(self.window)
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.1, 0.1, 0.1, 1.0)
-
         self.last_time = glfw.get_time()
-        self.view = np.array([[0.0, 0.0, 1.0, -5.0],
-                              [-1.0, 0.0, 0.0, 0.0],
-                              [0.0, 1.0, 0.0, 0.0],
+
+        f =   np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        r =     np.array([0.0, -1.0, 0.0], dtype=np.float32)
+        u =        np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        p =  np.array([-5.0, 0.0, 0.0], dtype=np.float32)
+        self.view = np.array([[r[0], u[0], f[0], p[0]],
+                              [r[1], u[1], f[1], p[1]],
+                              [r[2], u[2], f[2], p[2]],
                               [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
 
         self.minesweeper = MinesweeperBoard(10, 10, 10, 0)
