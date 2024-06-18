@@ -74,7 +74,7 @@ class App:
 
         glfw.make_context_current(self.window)
         glEnable(GL_DEPTH_TEST)
-        glClearColor(0.1, 0.1, 0.1, 1.0)
+        glClearColor(195/256, 195/256, 195/256, 1.0)
         self.last_time = glfw.get_time()
 
         f =   np.array([1.0, 0.0, 0.0], dtype=np.float32)
