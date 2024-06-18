@@ -22,7 +22,7 @@ void main()
 {
     vec4 worldPosition = vec4(position, 1.0) * model;
     gl_Position = projection * view * worldPosition;
-    texCoords = texCoords;
+    TexCoords = texCoords;
 }
 
 """
@@ -88,6 +88,12 @@ class App:
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.1, 0.1, 0.1, 1.0)
 
+        self.last_time = glfw.get_time()
+        self.view = np.array([[0.0, 0.0, 1.0, -5.0],
+                              [-1.0, 0.0, 0.0, 0.0],
+                              [0.0, 1.0, 0.0, 0.0],
+                              [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
+
         self.minesweeper = MinesweeperBoard(10, 10, 10, 0)
 
         self.texture_atlas = self.load_texture("textures/atlas.png")
@@ -118,14 +124,6 @@ class App:
         return texture
 
     def mainloop(self):
-        view = np.array([[0.0, 1.0, 0.0, 0.0],
-                         [0.0, 0.0, 1.0, 0.0],
-                         [-1.0, 0.0, 0.0, 0.0],
-                         [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
-
-        view_loc = glGetUniformLocation(self.shader_program, "view")
-        glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
-
         fov = np.radians(45)
         aspect = self.pixel_x / self.pixel_y
         near = 0.1
@@ -157,6 +155,33 @@ class App:
         if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
             self.minesweeper.print()
             print()
+
+        if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
+            print(self.view)
+            print()
+
+        t = glfw.get_time()
+        dt = t - self.last_time
+        self.last_time = t
+
+        speed = 5.0
+        if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
+            self.view[0][3] += speed * dt
+        elif glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
+            self.view[0][3] -= speed * dt
+
+        if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
+            self.view[1][3] += speed * dt
+        elif glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
+            self.view[1][3] -= speed * dt
+
+        if glfw.get_key(self.window, glfw.KEY_SPACE) == glfw.PRESS:
+            self.view[2][3] += speed * dt
+        elif glfw.get_key(self.window, glfw.KEY_C) == glfw.PRESS:
+            self.view[2][3] -= speed * dt
+
+        view_loc = glGetUniformLocation(self.shader_program, "view")
+        glUniformMatrix4fv(view_loc, 1, GL_FALSE, self.view)
 
     def render(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -204,6 +229,10 @@ class FieldQuad:
 
                 offset = y * size_x + x * 20
                 indices.extend([offset, offset+1, offset+2, offset+1, offset+2, offset+3])
+                # print(x, y)
+                # print(vertices)
+                # print(indices)
+                # return
 
         vertices = np.array(vertices, dtype=np.float32)
         indices = np.array(indices, dtype=np.uint32)
