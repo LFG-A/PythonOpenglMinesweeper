@@ -5,18 +5,15 @@ import ctypes
 from OpenGL.GL.shaders import compileProgram, compileShader
 import pyrr
 
-class Object:
-
-    def __init__(self, position, euler_angles):
-        self.position = np.array(position, dtype=np.float32)
-        self.euler_angles = np.array(euler_angles, dtype=np.float32)
+from minesweeper import *
 
 class App:
 
     def __init__(self):
 
         pg.init()
-        pg.display.set_mode((800, 600), pg.DOUBLEBUF | pg.OPENGL)
+        screen_size = (pg.display.Info().current_w, pg.display.Info().current_h)
+        pg.display.set_mode(screen_size, pg.DOUBLEBUF | pg.OPENGL | pg.FULLSCREEN)
         self.clock = pg.time.Clock()
 
         glClearColor(0.2, 0.2, 0.2, 1.0)
@@ -27,18 +24,32 @@ class App:
         glUseProgram(self.shader)
         glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
 
-        self.cube_mesh = Mesh()
+        self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
+        self.minesweeperBoard.reveal_cell(self.minesweeperBoard.get_cell(0, 0))
+        self.cube_mesh = FieldQuad(self.minesweeperBoard)
         self.texture = Texture("textures/atlas.png")
 
         projection_matrix = pyrr.matrix44.create_perspective_projection_matrix(
-            fovy=45, aspect=800/600,
+            fovy=45, aspect=screen_size[0]/screen_size[1],
             near=0.1, far=10, dtype=np.float32)
 
         glUniformMatrix4fv(
             glGetUniformLocation(self.shader, "projection"),
             1, GL_FALSE, projection_matrix)
 
-        self.view_matrix = glGetUniformLocation(self.shader, "view")
+        self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
+        model_matrix = np.array([[1, 0, 0, 0],
+                                 [0, 1, 0, 0],
+                                 [0, 0, 1, 0],
+                                 [0, 0, 0, 1]], dtype=np.float32)
+        glUniformMatrix4fv(self.modelMatrixLocation, 1, GL_TRUE, model_matrix)
+
+        self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
+        view_matrix = np.array([[1, 0, 0, 0],
+                                [0, 1, 0, 0],
+                                [0, 0, 1, -3],
+                                [0, 0, 0, 1]], dtype=np.float32)
+        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, view_matrix)
 
         self.main_loop()
 
@@ -66,18 +77,11 @@ class App:
             glUseProgram(self.shader)
             self.texture.use()
 
-            view_matrix = np.array([[1, 0, 0, -3],
-                                     [0, 1, 0, -3],
-                                     [0, 0, 1, -3],
-                                     [0, 0, 0, 1]], dtype=np.float32)
-
-            glUniformMatrix4fv(self.view_matrix, 1, GL_FALSE, view_matrix)
-
             glBindVertexArray(self.cube_mesh.vao)
             glDrawArrays(GL_TRIANGLES, 0, self.cube_mesh.vertex_count)
 
             pg.display.flip()
-            self.clock.tick(60)
+            # self.clock.tick(60)
 
         self.quit()
 
@@ -87,9 +91,9 @@ class App:
         glDeleteProgram(self.shader)
         pg.quit()
 
-class Mesh:
+class FieldQuad:
 
-    def __init__(self):
+    def __init__(self, minesweeper, cell_size=1.0):
         # x, y, z, s, t
         vertices = (
             # front
@@ -146,6 +150,32 @@ class Mesh:
             -0.5,  0.5,  0.5, 0.5, 1/3,
             -0.5,  0.5, -0.5, 0.5, 2/3
         )
+
+        vertices = []
+        size_x, size_y = minesweeper.size_x, minesweeper.size_y
+        for y in range(size_y):
+            y_pos = y*cell_size
+            for x in range(size_x):
+                x_pos = x*cell_size
+                v0 = (x_pos, y_pos, 0)
+                v1 = (x_pos, y_pos + cell_size, 0)
+                v2 = (x_pos + cell_size, y_pos + cell_size, 0)
+                v3 = (x_pos + cell_size, y_pos, 0)
+                vts = MinesweeperCell.get_atlas_coords(minesweeper.get_cell(x, y))
+
+                vertices.extend(v0)
+                vertices.extend(vts[2])
+                vertices.extend(v1)
+                vertices.extend(vts[0])
+                vertices.extend(v2)
+                vertices.extend(vts[1])
+
+                vertices.extend(v2)
+                vertices.extend(vts[1])
+                vertices.extend(v3)
+                vertices.extend(vts[3])
+                vertices.extend(v0)
+                vertices.extend(vts[2])
 
         self.vertex_count = len(vertices) // 5
         self.vertices = np.array(vertices, dtype=np.float32)
