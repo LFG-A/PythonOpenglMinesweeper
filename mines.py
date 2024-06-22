@@ -3,7 +3,6 @@ from OpenGL.GL import *
 import numpy as np
 import ctypes
 from OpenGL.GL.shaders import compileProgram, compileShader
-import pyrr
 
 from minesweeper import *
 
@@ -29,9 +28,19 @@ class App:
         self.cube_mesh = FieldQuad(self.minesweeperBoard)
         self.texture = Texture("textures/atlas.png")
 
-        projection_matrix = pyrr.matrix44.create_perspective_projection_matrix(
-            fovy=45, aspect=screen_size[0]/screen_size[1],
-            near=0.1, far=10, dtype=np.float32)
+        fov = np.radians(45)
+        aspect = screen_size[0]/screen_size[1]
+        near = 0.1
+        far = 100.0
+        f = 1.0 / np.tan(fov / 2.0)
+        a = (far + near) / (near - far)
+        b = (2.0 * far * near) / (near - far)
+        projection_matrix = np.array([
+            [f / aspect, 0, 0, 0],
+            [0, f, 0, 0],
+            [0, 0, a, -1],
+            [0, 0, b, 0]
+        ], dtype=np.float32)
 
         glUniformMatrix4fv(
             glGetUniformLocation(self.shader, "projection"),
