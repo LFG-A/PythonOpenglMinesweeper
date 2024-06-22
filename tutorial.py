@@ -43,6 +43,9 @@ class App:
             1, GL_FALSE, projection_matrix)
 
         self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
+        self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
+        view_matrix = pyrr.matrix44.create_identity(dtype=np.float32)
+        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, view_matrix)
 
         self.main_loop()
 
