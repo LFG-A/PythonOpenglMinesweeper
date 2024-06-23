@@ -15,7 +15,7 @@ class Camera:
                  near,
                  far,
                  position,
-                 rotation):
+                 euler_rotation):
 
         self.shader = shader
 
@@ -25,7 +25,7 @@ class Camera:
         self.far = far
 
         self.position = position
-        self.rotation = rotation
+        self.euler_rotation = euler_rotation
 
         self.projectionMatrixLocation = glGetUniformLocation(self.shader, "projection")
         self.update_projection()
@@ -67,30 +67,40 @@ class Camera:
 
         glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, self.view_matrix)
 
-    def raycast_on_area(self, size_x, size_y, cell_size):
-
-        max_x = size_x * cell_size
-        max_y = size_y * cell_size
-
-        # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
-        # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
-
-        hit_position = None
-
-        ray = self.get_ray()
-
-    def get_ray(self):
+    def get_ray(self) -> tuple:
 
         # ray is a vector starting at the camera position and pointing into the direction of the camera
         # the ray is defined by a point and a direction vector
 
-        # the point is the camera position
-        point = np.array(self.position, dtype=np.float32)
-
         # the direction is the negative z-axis of the camera
         direction = np.array([0, 0, 1], dtype=np.float32)
 
-        return point, direction
+        return self.position, direction
+
+    def get_ray_from_screen(self, x, y) -> tuple:
+
+        print(f"screen pixel: {x}, {y}")
+
+        # Convert screen coordinates to NDC
+        ndc_x = (2.0 * x) / self.screen_size[0] - 1.0
+        ndc_y = 1.0 - (2.0 * y) / self.screen_size[1]
+        ndc_z = -1.0
+
+        ndc = np.array([ndc_x, ndc_y, ndc_z, 1.0])
+
+        # Inverse projection to get camera coordinates
+        inv_proj_matrix = np.linalg.inv(self.projection_matrix)
+        camera_coords = np.dot(inv_proj_matrix, ndc)
+        camera_coords = camera_coords / camera_coords[3]
+
+        inv_view_matrix = np.linalg.inv(self.view_matrix)
+        world_coords = np.dot(inv_view_matrix, camera_coords)
+        world_coords = world_coords / world_coords[3]
+
+        ray_dir = world_coords[:3] - self.position
+        ray_dir = ray_dir / np.linalg.norm(ray_dir)
+
+        return self.position, ray_dir
 
 class App:
 
@@ -121,11 +131,11 @@ class App:
         glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
 
         self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
-        self.minesweeperBoard.reveal_cell(self.minesweeperBoard.get_cell(0, 0))
-        self.mine_field_quad = FieldQuad(self.minesweeperBoard)
+        self.cell_size = 1.0
+        self.mine_field_quad = FieldQuad(self.minesweeperBoard, self.cell_size)
         self.texture = Texture("textures/atlas.png")
 
-        self.camera = Camera(self.shader, np.radians(90), screen_size, 0.1, 100.0, [0, 0, -5], [0, 0, 0])
+        self.camera = Camera(self.shader, np.radians(90), screen_size, 0.1, 100.0, [-(self.minesweeperBoard.size_x*self.cell_size)/2, -(self.minesweeperBoard.size_y*self.cell_size)/2, -5], [0, 0, 0])
 
         self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
         model_matrix = np.array([[1, 0, 0, 0],
@@ -135,46 +145,25 @@ class App:
         glUniformMatrix4fv(self.modelMatrixLocation, 1, GL_TRUE, model_matrix)
 
         self.last_time = glfw.get_time()
-
-        self.test_raycasting()
+        self.f1_state_flag = False
+        self.mouse_cursor_enabled = True
 
         self.main_loop()
 
-    def test_raycasting(self):
+    def raycasting_xy_plane(self, ray):
 
-        cell_size = 1.0
-        corners = []
-        size_x, size_y = self.minesweeperBoard.size_x, self.minesweeperBoard.size_y
-        for y in range(size_y):
-            y_pos = y*cell_size
-            for x in range(size_x):
-                x_pos = x*cell_size
-                v0 = (x_pos, y_pos, 0)
-                v1 = (x_pos, y_pos + cell_size, 0)
-                v2 = (x_pos + cell_size, y_pos + cell_size, 0)
-                v3 = (x_pos + cell_size, y_pos, 0)
+        ray_pos, ray_dir = ray
 
-                corners.append(v0)
-                corners.append(v1)
-                corners.append(v2)
-                corners.append(v3)
+        if ray_dir[2] == 0:
+            return None
 
-        import matplotlib.pyplot as plt
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        x,y,z = [],[],[]
-        for point in corners:
-            x.append(point[0])
-            y.append(point[1])
-            z.append(point[2])
-        ray = self.camera.get_ray()
-        ax.quiver(ray[0][0], ray[0][1], ray[0][2], ray[1][0], ray[1][1], ray[1][2], color='r')
-        ax.scatter(x, y, z)
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.axis('equal')
-        plt.show()
+        a = - ray_pos[2] / ray_dir[2]
+        if a <= 0:
+            return None
+
+        hit_position = ray_pos + a * ray_dir
+
+        return hit_position
 
     def create_shader(self, vertex_file_path, fragment_file_path):
 
@@ -190,22 +179,52 @@ class App:
 
     def mouse_button_callback(self, window, button, action, mods):
 
+        x, y = glfw.get_cursor_pos(window)
+
         if action == glfw.PRESS:
-            self.on_mouse_click(button, *glfw.get_cursor_pos(window))
+            self.on_mouse_click(button, int(x), int(y))
 
     def on_mouse_click(self, button, x, y):
 
-        view_matrix = self.camera.get_view_matrix()
-        projection_matrix = self.camera.get_projection_matrix()
-
-        print(view_matrix)
-        print(projection_matrix)
-
         if button == glfw.MOUSE_BUTTON_LEFT:
-            print(f"TODO: self.minesweeperBoard.reveal_cell(x, y) x: {x}, y: {y}")
+            call = self.minesweeperBoard.reveal_cell
+        elif button == glfw.MOUSE_BUTTON_RIGHT:
+            call = self.minesweeperBoard.flag_cell
+        else:
+            return
 
-        if button == glfw.MOUSE_BUTTON_RIGHT:
-            print(f"TODO: self.minesweeperBoard.flag_cell(x, y) x: {x}, y: {y}")
+        if self.mouse_cursor_enabled:
+            hit_position = 10 * self.raycasting_xy_plane(self.camera.get_ray_from_screen(x, y))
+            print("TODO: Fix raycasting from screen coordinates")
+            print(f"world coord: {hit_position}")
+        else:
+            hit_position = self.raycasting_xy_plane(self.camera.get_ray())
+            hit_position = -1 * hit_position
+
+        # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
+        # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
+
+        if hit_position is not None:
+
+            max_x = self.minesweeperBoard.size_x * self.cell_size
+            if hit_position[0] < 0 or hit_position[0] > max_x:
+                return
+            max_y = self.minesweeperBoard.size_y * self.cell_size
+            if hit_position[1] < 0 or hit_position[1] > max_y:
+                return
+
+            x, y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
+
+            print(f"game cell: {x}, {y}")
+
+            call(self.minesweeperBoard.get_cell(x, y))
+
+            self.update_mine_field_quad()
+
+    def update_mine_field_quad(self):
+
+        self.mine_field_quad.destroy()
+        self.mine_field_quad = FieldQuad(self.minesweeperBoard, self.cell_size)
 
     def main_loop(self):
 
@@ -247,7 +266,26 @@ class App:
         elif glfw.get_key(self.window, glfw.KEY_C) == glfw.PRESS:
             self.camera.position[1] += speed * dt
 
+        if glfw.get_key(self.window, glfw.KEY_F1) == glfw.PRESS:
+            if not self.f1_state_flag:
+                self.toggle_mouse_cursor()
+                self.f1_state_flag = True
+        else:
+            self.f1_state_flag = False
+
+        if glfw.get_key(self.window, glfw.KEY_N) == glfw.PRESS:
+            self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
+            self.update_mine_field_quad()
+
         self.camera.update_view()
+
+    def toggle_mouse_cursor(self) -> None:
+
+        self.mouse_cursor_enabled = not self.mouse_cursor_enabled
+        if glfw.get_input_mode(self.window, glfw.CURSOR) == glfw.CURSOR_DISABLED:
+            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
+        else:
+            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_DISABLED)
 
     def render(self):
 
@@ -268,7 +306,7 @@ class App:
 
 class FieldQuad:
 
-    def __init__(self, minesweeper, cell_size=1.0):
+    def __init__(self, minesweeper, cell_size):
 
         # x, y, z, s, t
         vertices = []

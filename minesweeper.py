@@ -50,6 +50,9 @@ class MinesweeperBoard:
                         cell.adjacent_cells.append(adjacent_cell)
 
     def reveal_cell(self, cell: "MinesweeperCell"):
+        if cell.revealed or cell.flagged:
+            return True
+
         cell.revealed = True
         self.revealed_cells += 1
 
