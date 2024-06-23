@@ -77,28 +77,13 @@ class Camera:
 
         return self.position, direction
 
-    def get_ray_from_screen(self, x, y) -> tuple:
+    def get_ray_through_screen_pos(self, x, y):
 
-        # Convert screen coordinates to NDC
-        ndc_x = (2.0 * x) / self.screen_size[0] - 1.0
-        ndc_y = 1.0 - (2.0 * y) / self.screen_size[1]
-        ndc_z = -1.0
+        pos, dir = self.get_ray()
 
-        ndc = np.array([ndc_x, ndc_y, ndc_z, 1.0])
+        direction = dir
 
-        # Inverse projection to get camera coordinates
-        inv_proj_matrix = np.linalg.inv(self.projection_matrix)
-        camera_coords = np.dot(inv_proj_matrix, ndc)
-        camera_coords = camera_coords / camera_coords[3]
-
-        inv_view_matrix = np.linalg.inv(self.view_matrix)
-        world_coords = np.dot(inv_view_matrix, camera_coords)
-        world_coords = world_coords / world_coords[3]
-
-        ray_dir = world_coords[:3] - self.position
-        ray_dir = ray_dir / np.linalg.norm(ray_dir)
-
-        return self.position, ray_dir
+        return pos, direction
 
 class App:
 
@@ -148,9 +133,7 @@ class App:
 
         self.main_loop()
 
-    def raycasting_xy_plane(self, ray):
-
-        ray_pos, ray_dir = ray
+    def raycasting_xy_plane(self, ray_pos, ray_dir):
 
         if ray_dir[2] == 0:
             return None
@@ -192,14 +175,23 @@ class App:
             return
 
         if self.mouse_cursor_enabled:
-            hit_position = 10 * self.raycasting_xy_plane(self.camera.get_ray_from_screen(x, y))
-            print(f"screen pixel: {x}, {y}")
-            print(f"view: {self.camera.get_view_matrix()}")
-            print(f"proj: {self.camera.get_projection_matrix()}")
-            print(f"world coord: {hit_position}")
+            ray_pos, ray_dir = self.camera.get_ray_through_screen_pos(x, y)
+            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
+
+            ray_pos, ray_dir = self.camera.get_ray()
+            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
+            v = np.array([-1*hit_position[0], -1*hit_position[1], -1*hit_position[2], 1])
+            print(f"{v} -> {v@self.camera.get_projection_matrix()@self.camera.get_view_matrix()}")
         else:
-            hit_position = self.raycasting_xy_plane(self.camera.get_ray())
+            ray_pos, ray_dir = self.camera.get_ray()
+            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
             hit_position = -1 * hit_position
+
+        print(f"screen pixel: {x}, {y}")
+        print(f"view: {self.camera.get_view_matrix()}")
+        print(f"proj: {self.camera.get_projection_matrix()}")
+        print(f"ray: {ray_pos, ray_dir}")
+        print(f"world coord: {hit_position}")
 
         # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
         # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
@@ -334,6 +326,33 @@ class FieldQuad:
                 vertices.extend(vts[3])
                 vertices.extend(v0)
                 vertices.extend(vts[2])
+
+        # import matplotlib.pyplot as plt
+
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+
+        # vertexes = []
+        # for i in range(0, len(vertices), 5):
+        #     v = (vertices[i],vertices[i+1],vertices[i+2])
+        #     if v in vertexes:
+        #         continue
+        #     vertexes.append(v)
+
+        # x,y,z = [],[],[]
+        # for v in vertexes:
+        #     x.append(v[0])
+        #     y.append(v[1])
+        #     z.append(v[2])
+        # ax.scatter(x, y, z)
+
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+
+        # ax.axis('equal')
+
+        # plt.show()
 
         self.vertex_count = len(vertices) // 5
         self.vertices = np.array(vertices, dtype=np.float32)
