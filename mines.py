@@ -37,24 +37,60 @@ class Camera:
         # raise AttributeError(f"Attribute '{name}' is read-only")
         super().__setattr__(name, value)
 
+    def get_projection_matrix(self) -> np.ndarray:
+
+        return self.projection_matrix
+
     def update_projection(self):
+
         aspect = self.screen_size[0]/self.screen_size[1]
         f = 1.0 / np.tan(self.fov / 2.0)
         a = (self.far + self.near) / (self.near - self.far)
         b = (2.0 * self.far * self.near) / (self.near - self.far)
-        projection_matrix = np.array([[f / aspect, 0, 0, 0],
-                                      [0, f, 0, 0],
-                                      [0, 0, a, -1],
-                                      [0, 0, b, 0]], dtype=np.float32)
+        self.projection_matrix = np.array([[f / aspect, 0, 0, 0],
+                                           [0, f, 0, 0],
+                                           [0, 0, a, -1],
+                                           [0, 0, b, 0]], dtype=np.float32)
 
-        glUniformMatrix4fv(self.projectionMatrixLocation, 1, GL_FALSE, projection_matrix)
+        glUniformMatrix4fv(self.projectionMatrixLocation, 1, GL_FALSE, self.projection_matrix)
+
+    def get_view_matrix(self) -> np.ndarray:
+
+        return self.view_matrix
 
     def update_view(self):
-        view_matrix = np.array([[1, 0, 0, self.position[0]],
-                                [0, 1, 0, self.position[1]],
-                                [0, 0, 1, self.position[2]],
-                                [0, 0, 0, 1]], dtype=np.float32)
-        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, view_matrix)
+
+        self.view_matrix = np.array([[1, 0, 0, self.position[0]],
+                                     [0, 1, 0, self.position[1]],
+                                     [0, 0, 1, self.position[2]],
+                                     [0, 0, 0, 1]], dtype=np.float32)
+
+        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, self.view_matrix)
+
+    def raycast_on_area(self, size_x, size_y, cell_size):
+
+        max_x = size_x * cell_size
+        max_y = size_y * cell_size
+
+        # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
+        # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
+
+        hit_position = None
+
+        ray = self.get_ray()
+
+    def get_ray(self):
+
+        # ray is a vector starting at the camera position and pointing into the direction of the camera
+        # the ray is defined by a point and a direction vector
+
+        # the point is the camera position
+        point = np.array(self.position, dtype=np.float32)
+
+        # the direction is the negative z-axis of the camera
+        direction = np.array([0, 0, 1], dtype=np.float32)
+
+        return point, direction
 
 class App:
 
@@ -86,7 +122,7 @@ class App:
 
         self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
         self.minesweeperBoard.reveal_cell(self.minesweeperBoard.get_cell(0, 0))
-        self.cube_mesh = FieldQuad(self.minesweeperBoard)
+        self.mine_field_quad = FieldQuad(self.minesweeperBoard)
         self.texture = Texture("textures/atlas.png")
 
         self.camera = Camera(self.shader, np.radians(90), screen_size, 0.1, 100.0, [0, 0, -5], [0, 0, 0])
@@ -100,7 +136,45 @@ class App:
 
         self.last_time = glfw.get_time()
 
+        self.test_raycasting()
+
         self.main_loop()
+
+    def test_raycasting(self):
+
+        cell_size = 1.0
+        corners = []
+        size_x, size_y = self.minesweeperBoard.size_x, self.minesweeperBoard.size_y
+        for y in range(size_y):
+            y_pos = y*cell_size
+            for x in range(size_x):
+                x_pos = x*cell_size
+                v0 = (x_pos, y_pos, 0)
+                v1 = (x_pos, y_pos + cell_size, 0)
+                v2 = (x_pos + cell_size, y_pos + cell_size, 0)
+                v3 = (x_pos + cell_size, y_pos, 0)
+
+                corners.append(v0)
+                corners.append(v1)
+                corners.append(v2)
+                corners.append(v3)
+
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        x,y,z = [],[],[]
+        for point in corners:
+            x.append(point[0])
+            y.append(point[1])
+            z.append(point[2])
+        ray = self.camera.get_ray()
+        ax.quiver(ray[0][0], ray[0][1], ray[0][2], ray[1][0], ray[1][1], ray[1][2], color='r')
+        ax.scatter(x, y, z)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.axis('equal')
+        plt.show()
 
     def create_shader(self, vertex_file_path, fragment_file_path):
 
@@ -115,13 +189,24 @@ class App:
         return shader
 
     def mouse_button_callback(self, window, button, action, mods):
-        if button == glfw.MOUSE_BUTTON_LEFT and action == glfw.PRESS:
-            print("Linksklick erkannt!")
-            # Füge hier den Code hinzu, der bei einem Linksklick ausgeführt werden soll
 
-        if button == glfw.MOUSE_BUTTON_RIGHT and action == glfw.PRESS:
-            print("Rechtsklick erkannt!")
-    
+        if action == glfw.PRESS:
+            self.on_mouse_click(button, *glfw.get_cursor_pos(window))
+
+    def on_mouse_click(self, button, x, y):
+
+        view_matrix = self.camera.get_view_matrix()
+        projection_matrix = self.camera.get_projection_matrix()
+
+        print(view_matrix)
+        print(projection_matrix)
+
+        if button == glfw.MOUSE_BUTTON_LEFT:
+            print(f"TODO: self.minesweeperBoard.reveal_cell(x, y) x: {x}, y: {y}")
+
+        if button == glfw.MOUSE_BUTTON_RIGHT:
+            print(f"TODO: self.minesweeperBoard.flag_cell(x, y) x: {x}, y: {y}")
+
     def main_loop(self):
 
         while not glfw.window_should_close(self.window):
@@ -170,13 +255,13 @@ class App:
         glUseProgram(self.shader)
         self.texture.use()
 
-        glBindVertexArray(self.cube_mesh.vao)
-        glDrawArrays(GL_TRIANGLES, 0, self.cube_mesh.vertex_count)
+        glBindVertexArray(self.mine_field_quad.vao)
+        glDrawArrays(GL_TRIANGLES, 0, self.mine_field_quad.vertex_count)
 
         glfw.swap_buffers(self.window)
 
     def quit(self):
-        self.cube_mesh.destroy()
+        self.mine_field_quad.destroy()
         self.texture.destroy()
         glDeleteProgram(self.shader)
         glfw.terminate()
