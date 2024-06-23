@@ -2,6 +2,7 @@ import glfw
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
+from PIL import Image
 
 from minesweeper import *
 
@@ -73,6 +74,8 @@ class App:
 
         glfw.make_context_current(self.window)
 
+        glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
+
         glClearColor(0.2, 0.2, 0.2, 1.0)
         glEnable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
@@ -111,6 +114,13 @@ class App:
 
         return shader
 
+    def mouse_button_callback(self, window, button, action, mods):
+        if button == glfw.MOUSE_BUTTON_LEFT and action == glfw.PRESS:
+            print("Linksklick erkannt!")
+            # Füge hier den Code hinzu, der bei einem Linksklick ausgeführt werden soll
+
+        if button == glfw.MOUSE_BUTTON_RIGHT and action == glfw.PRESS:
+            print("Rechtsklick erkannt!")
     
     def main_loop(self):
 
@@ -223,7 +233,6 @@ class FieldQuad:
 class Texture:
 
     def __init__(self, file_path):
-
         self.texture = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, self.texture)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
@@ -231,16 +240,12 @@ class Texture:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        # import pygame as pg
-        # pg.init()
-        # screen_size = (pg.display.Info().current_w, pg.display.Info().current_h)
-        # pg.display.set_mode(screen_size, pg.DOUBLEBUF | pg.OPENGL | pg.FULLSCREEN)
-        # self.clock = pg.time.Clock()
-        # image = pg.image.load(file_path).convert_alpha()
-        # image_width, image_height = image.get_rect().size
-        # image_data = pg.image.tostring(image, "RGBA")
-        # pg.quit()
-        # glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data)
+        # Verwende Pillow, um das Bild zu laden
+        image = Image.open(file_path).convert("RGBA")
+        image_width, image_height = image.size
+        image_data = np.array(image.getdata(), np.uint8)
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data)
         glGenerateMipmap(GL_TEXTURE_2D)
 
     def use(self):
