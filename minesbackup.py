@@ -1,3 +1,4 @@
+import pygame as pg
 import glfw
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
@@ -72,6 +73,9 @@ class App:
             return
 
         glfw.make_context_current(self.window)
+        glEnable(GL_DEPTH_TEST)
+        glClearColor(195/256, 195/256, 195/256, 1.0)
+        self.last_time = glfw.get_time()
 
         glClearColor(0.2, 0.2, 0.2, 1.0)
         glEnable(GL_BLEND)
@@ -82,11 +86,11 @@ class App:
         glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
 
         self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
-        self.minesweeperBoard.reveal_cell(self.minesweeperBoard.get_cell(0, 0))
+        # self.minesweeperBoard.reveal_cell(self.minesweeperBoard.get_cell(0, 0))
         self.cube_mesh = FieldQuad(self.minesweeperBoard)
         self.texture = Texture("textures/atlas.png")
 
-        self.camera = Camera(self.shader, np.radians(90), screen_size, 0.1, 100.0, [0, 0, -5], [0, 0, 0])
+        print(self.shader)
 
         self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
         model_matrix = np.array([[1, 0, 0, 0],
@@ -95,7 +99,7 @@ class App:
                                  [0, 0, 0, 1]], dtype=np.float32)
         glUniformMatrix4fv(self.modelMatrixLocation, 1, GL_TRUE, model_matrix)
 
-        self.last_time = glfw.get_time()
+        self.camera = Camera(self.shader, np.radians(45), screen_size, 0.1, 100.0, np.array([-5.0, 0.0, 0.0], dtype=np.float32), np.array([0.0, 0.0, 0.0], dtype=np.float32))
 
         self.main_loop()
 
@@ -111,7 +115,6 @@ class App:
 
         return shader
 
-    
     def main_loop(self):
 
         while not glfw.window_should_close(self.window):
@@ -129,34 +132,33 @@ class App:
         if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
             self.minesweeperBoard.print()
             print()
-        if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
-            print(self.camera.position)
 
         t = glfw.get_time()
         dt = t - self.last_time
         self.last_time = t
 
-        speed = 2.0
+        speed = 5.0
         if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
-            self.camera.position[2] += speed * dt
+            self.view[0][3] += speed * dt
         elif glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
-            self.camera.position[2] -= speed * dt
+            self.view[0][3] -= speed * dt
 
         if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
-            self.camera.position[0] += speed * dt
+            self.view[1][3] += speed * dt
         elif glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
-            self.camera.position[0] -= speed * dt
+            self.view[1][3] -= speed * dt
 
         if glfw.get_key(self.window, glfw.KEY_SPACE) == glfw.PRESS:
-            self.camera.position[1] -= speed * dt
+            self.view[2][3] += speed * dt
         elif glfw.get_key(self.window, glfw.KEY_C) == glfw.PRESS:
-            self.camera.position[1] += speed * dt
+            self.view[2][3] -= speed * dt
 
-        self.camera.update_view()
+        self.camera.update_view(self.view)
 
     def render(self):
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
         glUseProgram(self.shader)
         self.texture.use()
 
@@ -174,8 +176,63 @@ class App:
 class FieldQuad:
 
     def __init__(self, minesweeper, cell_size=1.0):
-
         # x, y, z, s, t
+        vertices = (
+            # front
+             0.5,  0.5,  0.5, 0.25, 1/3,
+             0.5,  0.5, -0.5, 0.25, 2/3,
+             0.5, -0.5, -0.5, 0, 2/3,
+
+             0.5, -0.5, -0.5, 0, 2/3,
+             0.5, -0.5,  0.5, 0, 1/3,
+             0.5,  0.5,  0.5, 0.25, 1/3,
+
+            # back
+            -0.5,  0.5,  0.5, 1, 0,
+            -0.5,  0.5, -0.5, 1, 1/3,
+            -0.5, -0.5, -0.5, 0.75, 1/3,
+
+            -0.5, -0.5, -0.5, 0.75, 1/3,
+            -0.5, -0.5,  0.5, 0.75, 0,
+            -0.5,  0.5,  0.5, 1, 0,
+
+            # bottom
+            -0.5, -0.5, -0.5, 0.25, 0,
+             0.5, -0.5, -0.5, 0.5, 0,
+             0.5,  0.5, -0.5, 0.5, 1/3,
+
+             0.5,  0.5, -0.5, 0.5, 1/3,
+            -0.5,  0.5, -0.5, 0.25, 1/3,
+            -0.5, -0.5, -0.5, 0.25, 0,
+
+            # top
+            -0.5, -0.5,  0.5, 0.5, 0,
+             0.5, -0.5,  0.5, 0.75, 0,
+             0.5,  0.5,  0.5, 0.75, 1/3,
+
+             0.5,  0.5,  0.5, 0.75, 1/3,
+            -0.5,  0.5,  0.5, 0.5, 1/3,
+            -0.5, -0.5,  0.5, 0.5, 0,
+
+            # left
+            -0.5, -0.5, -0.5, 0.25, 2/3,
+             0.5, -0.5, -0.5, 0.5, 2/3,
+             0.5, -0.5,  0.5, 0.5, 1/3,
+
+             0.5, -0.5,  0.5, 0.5, 1/3,
+            -0.5, -0.5,  0.5, 0.25, 1/3,
+            -0.5, -0.5, -0.5, 0.25, 2/3,
+
+            # right
+            -0.5,  0.5, -0.5, 0.5, 2/3,
+             0.5,  0.5, -0.5, 0.75, 2/3,
+             0.5,  0.5,  0.5, 0.75, 1/3,
+
+             0.5,  0.5,  0.5, 0.75, 1/3,
+            -0.5,  0.5,  0.5, 0.5, 1/3,
+            -0.5,  0.5, -0.5, 0.5, 2/3
+        )
+
         vertices = []
         size_x, size_y = minesweeper.size_x, minesweeper.size_y
         for y in range(size_y):
@@ -231,16 +288,12 @@ class Texture:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        # import pygame as pg
-        # pg.init()
-        # screen_size = (pg.display.Info().current_w, pg.display.Info().current_h)
-        # pg.display.set_mode(screen_size, pg.DOUBLEBUF | pg.OPENGL | pg.FULLSCREEN)
-        # self.clock = pg.time.Clock()
-        # image = pg.image.load(file_path).convert_alpha()
-        # image_width, image_height = image.get_rect().size
-        # image_data = pg.image.tostring(image, "RGBA")
-        # pg.quit()
-        # glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data)
+        pg.init()
+        pg.display.set_mode((800, 600), pg.DOUBLEBUF | pg.OPENGL)
+        image = pg.image.load(file_path).convert_alpha()
+        image_width, image_height = image.get_rect().size
+        image_data = pg.image.tostring(image, "RGBA")
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data)
         glGenerateMipmap(GL_TEXTURE_2D)
 
     def use(self):
