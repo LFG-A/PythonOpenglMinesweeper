@@ -79,8 +79,6 @@ class Camera:
 
     def get_ray_from_screen(self, x, y) -> tuple:
 
-        print(f"screen pixel: {x}, {y}")
-
         # Convert screen coordinates to NDC
         ndc_x = (2.0 * x) / self.screen_size[0] - 1.0
         ndc_y = 1.0 - (2.0 * y) / self.screen_size[1]
@@ -195,7 +193,9 @@ class App:
 
         if self.mouse_cursor_enabled:
             hit_position = 10 * self.raycasting_xy_plane(self.camera.get_ray_from_screen(x, y))
-            print("TODO: Fix raycasting from screen coordinates")
+            print(f"screen pixel: {x}, {y}")
+            print(f"view: {self.camera.get_view_matrix()}")
+            print(f"proj: {self.camera.get_projection_matrix()}")
             print(f"world coord: {hit_position}")
         else:
             hit_position = self.raycasting_xy_plane(self.camera.get_ray())
@@ -379,6 +379,11 @@ class Texture:
     def destroy(self):
 
         glDeleteTextures(1, (self.texture,))
+
+class UI:
+
+    def __init__(self, app):
+        self.app = app
 
 if __name__ == '__main__':
     app = App()
