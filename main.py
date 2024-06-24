@@ -355,7 +355,7 @@ class FieldQuad:
 
         # plt.show()
 
-        # self.vertex_count = len(vertices) // 5 # TODO: remove
+        self.vertex_count = len(vertices) // 5
         self.vertices = np.array(vertices, dtype=np.float32)
 
         self.vao = glGenVertexArrays(1)
