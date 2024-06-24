@@ -301,7 +301,7 @@ class FieldQuad:
 
     def __init__(self, minesweeper, cell_size):
 
-        # x, y, z, s, t
+        # vertices = [x, y, z, s, t]
         vertices = []
         size_x, size_y = minesweeper.size_x, minesweeper.size_y
         for y in range(size_y):
@@ -355,7 +355,7 @@ class FieldQuad:
 
         # plt.show()
 
-        self.vertex_count = len(vertices) // 5
+        # self.vertex_count = len(vertices) // 5 # TODO: remove
         self.vertices = np.array(vertices, dtype=np.float32)
 
         self.vao = glGenVertexArrays(1)
