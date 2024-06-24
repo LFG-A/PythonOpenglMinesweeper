@@ -1,124 +1,232 @@
-import numpy as np
+import glfw
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
-import glfw
+import numpy as np
 from PIL import Image
 
 from minesweeper import *
 
-VERTEX_SHADER = """
-#version 330 core
+class Camera:
 
-layout (location = 0) in vec3 position;
-layout (location = 1) in vec2 texCoords;
+    def __init__(self,
+                 shader,
+                 fov,
+                 screen_size,
+                 near,
+                 far,
+                 position,
+                 euler_rotation):
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
+        self.shader = shader
 
-out vec2 TexCoords;
+        self.fov = fov
+        self.screen_size = screen_size
+        self.near = near
+        self.far = far
 
-void main()
-{
-    vec4 worldPosition = vec4(position, 1.0) * model;
-    gl_Position = projection * view * worldPosition;
-    TexCoords = texCoords;
-}
+        self.position = position
+        self.euler_rotation = euler_rotation
 
-"""
+        self.projectionMatrixLocation = glGetUniformLocation(self.shader, "projection")
+        self.update_projection()
 
-''' # TODO: Fix the VERTEX_SHADER
-VERTEX_SHADER = """
-#version 330 core
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec2 texCoords;
+        self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
+        self.update_view()
 
-out vec2 TexCoords;
+    def __setattr__(self, name: str, value) -> None:
+        # raise AttributeError(f"Attribute '{name}' is read-only")
+        super().__setattr__(name, value)
 
-void main()
-{
-    gl_Position = vec4(position, 1.0);
-    TexCoords = texCoords;
-}
-"""
-'''
+    def get_projection_matrix(self) -> np.ndarray:
 
-FRAGMENT_SHADER = """
-#version 330 core
-out vec4 FragColor;
+        return self.projection_matrix
 
-in vec2 TexCoords;
+    def update_projection(self):
 
-uniform sampler2D texture1;
+        aspect = self.screen_size[0]/self.screen_size[1]
+        f = 1.0 / np.tan(self.fov / 2.0)
+        a = (self.far + self.near) / (self.near - self.far)
+        b = (2.0 * self.far * self.near) / (self.near - self.far)
+        self.projection_matrix = np.array([[f / aspect, 0, 0, 0],
+                                           [0, f, 0, 0],
+                                           [0, 0, a, -1],
+                                           [0, 0, b, 0]], dtype=np.float32)
 
-void main()
-{
-    FragColor = texture(texture1, TexCoords);
-}
-"""
+        glUniformMatrix4fv(self.projectionMatrixLocation, 1, GL_FALSE, self.projection_matrix)
+
+    def get_view_matrix(self) -> np.ndarray:
+
+        return self.view_matrix
+
+    def update_view(self):
+
+        self.view_matrix = np.array([[1, 0, 0, self.position[0]],
+                                     [0, 1, 0, self.position[1]],
+                                     [0, 0, 1, self.position[2]],
+                                     [0, 0, 0, 1]], dtype=np.float32)
+
+        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, self.view_matrix)
+
+    def get_ray(self) -> tuple:
+
+        # ray is a vector starting at the camera position and pointing into the direction of the camera
+        # the ray is defined by a point and a direction vector
+
+        # the direction is the negative z-axis of the camera
+        direction = np.array([0, 0, 1], dtype=np.float32)
+
+        return self.position, direction
+
+    def get_ray_through_screen_pos(self, x, y):
+
+        pos, dir = self.get_ray()
+
+        direction = dir
+
+        return pos, direction
 
 class App:
+
     def __init__(self):
-        self.title = "Menu"
 
         if not glfw.init():
             return
 
-        self.monitor = glfw.get_primary_monitor()
-        self.pixel_x, self.pixel_y = glfw.get_video_mode(self.monitor).size
+        monitor = glfw.get_primary_monitor()
+        screen_size = glfw.get_video_mode(monitor).size
 
-        self.window = glfw.create_window(self.pixel_x, self.pixel_y, self.title, self.monitor, None)
+        title = "Minesweeper"
+        self.window = glfw.create_window(screen_size[0], screen_size[1], title, monitor, None)
         if not self.window:
             glfw.terminate()
             return
 
         glfw.make_context_current(self.window)
+
+        glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
+
+        glClearColor(0.2, 0.2, 0.2, 1.0)
+        glEnable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
-        glClearColor(195/256, 195/256, 195/256, 1.0)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        self.shader = self.create_shader("shaders/vertex_shader.glsl", "shaders/fragment_shader.glsl")
+        glUseProgram(self.shader)
+        glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
+
+        self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
+        self.cell_size = 1.0
+        self.mine_field_quad = FieldQuad(self.minesweeperBoard, self.cell_size)
+        self.texture = Texture("textures/atlas.png")
+
+        self.camera = Camera(self.shader, np.radians(90), screen_size, 0.1, 100.0, [-(self.minesweeperBoard.size_x*self.cell_size)/2, -(self.minesweeperBoard.size_y*self.cell_size)/2, -5], [0, 0, 0])
+
+        self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
+        model_matrix = np.array([[1, 0, 0, 0],
+                                 [0, 1, 0, 0],
+                                 [0, 0, 1, 0],
+                                 [0, 0, 0, 1]], dtype=np.float32)
+        glUniformMatrix4fv(self.modelMatrixLocation, 1, GL_TRUE, model_matrix)
+
         self.last_time = glfw.get_time()
+        self.f1_state_flag = False
+        self.mouse_cursor_enabled = True
 
-        f =   np.array([1.0, 0.0, 0.0], dtype=np.float32)
-        r =     np.array([0.0, -1.0, 0.0], dtype=np.float32)
-        u =        np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        p =  np.array([-5.0, 0.0, 0.0], dtype=np.float32)
-        self.view = np.array([[r[0], u[0], f[0], p[0]],
-                              [r[1], u[1], f[1], p[1]],
-                              [r[2], u[2], f[2], p[2]],
-                              [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
+        self.main_loop()
 
-        self.minesweeper = MinesweeperBoard(10, 10, 10, 0)
+    def raycasting_xy_plane(self, ray_pos, ray_dir):
 
-        cell_size = 0.1 # size of a cell side in meters
-        self.field_quad = FieldQuad(cell_size=cell_size, minesweeper=self.minesweeper)
+        if ray_dir[2] == 0:
+            return None
 
-        vertex_shader = compileShader(VERTEX_SHADER, GL_VERTEX_SHADER)
-        fragment_shader = compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER)
-        self.shader_program = compileProgram(vertex_shader, fragment_shader)
-        glUseProgram(self.shader_program)
+        a = - ray_pos[2] / ray_dir[2]
+        if a <= 0:
+            return None
 
-    def mainloop(self):
-        fov = np.radians(45)
-        aspect = self.pixel_x / self.pixel_y
-        near = 0.1
-        far = 100.0
+        hit_position = ray_pos + a * ray_dir
 
-        f = 1.0 / np.tan(fov / 2.0)
-        a = (far + near) / (near - far)
-        b = (2.0 * far * near) / (near - far)
+        return hit_position
 
-        projection = np.array([[f / aspect, 0, 0, 0],
-                               [0, f, 0, 0],
-                               [0, 0, a, -1],
-                               [0, 0, b, 0]], dtype=np.float32)
+    def create_shader(self, vertex_file_path, fragment_file_path):
 
-        proj_loc = glGetUniformLocation(self.shader_program, "projection")
-        glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection)
+        with open(vertex_file_path, 'r') as file:
+            vertex_src = file.readlines()
+        with open(fragment_file_path, 'r') as file:
+            fragment_src = file.readlines()
+
+        shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
+                                compileShader(fragment_src, GL_FRAGMENT_SHADER))
+
+        return shader
+
+    def mouse_button_callback(self, window, button, action, mods):
+
+        x, y = glfw.get_cursor_pos(window)
+
+        if action == glfw.PRESS:
+            self.on_mouse_click(button, int(x), int(y))
+
+    def on_mouse_click(self, button, x, y):
+
+        if button == glfw.MOUSE_BUTTON_LEFT:
+            call = self.minesweeperBoard.reveal_cell
+        elif button == glfw.MOUSE_BUTTON_RIGHT:
+            call = self.minesweeperBoard.flag_cell
+        else:
+            return
+
+        if self.mouse_cursor_enabled:
+            ray_pos, ray_dir = self.camera.get_ray_through_screen_pos(x, y)
+            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
+
+            ray_pos, ray_dir = self.camera.get_ray()
+            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
+            v = np.array([-1*hit_position[0], -1*hit_position[1], -1*hit_position[2], 1])
+            # print(f"{v} -> {v@self.camera.get_projection_matrix()@self.camera.get_view_matrix()}") # TODO: remove
+        else:
+            ray_pos, ray_dir = self.camera.get_ray()
+            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
+            hit_position = -1 * hit_position
+
+        # TODO: remove
+        # print(f"screen pixel: {x}, {y}")
+        # print(f"view: {self.camera.get_view_matrix()}")
+        # print(f"proj: {self.camera.get_projection_matrix()}")
+        # print(f"ray: {ray_pos, ray_dir}")
+        # print(f"world coord: {hit_position}")
+
+        # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
+        # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
+
+        if hit_position is not None:
+
+            max_x = self.minesweeperBoard.size_x * self.cell_size
+            if hit_position[0] < 0 or hit_position[0] > max_x:
+                return
+            max_y = self.minesweeperBoard.size_y * self.cell_size
+            if hit_position[1] < 0 or hit_position[1] > max_y:
+                return
+
+            x, y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
+
+            # print(f"game cell: {x}, {y}") # TODO: remove
+
+            call(self.minesweeperBoard.get_cell(x, y))
+
+            self.update_mine_field_quad()
+
+    def update_mine_field_quad(self):
+
+        self.mine_field_quad.destroy()
+        self.mine_field_quad = FieldQuad(self.minesweeperBoard, self.cell_size)
+
+    def main_loop(self):
 
         while not glfw.window_should_close(self.window):
             glfw.poll_events()
             self.manage_input()
             self.render()
-        glfw.terminate()
+
+        self.quit()
 
     def manage_input(self):
         if glfw.get_key(self.window, glfw.KEY_ESCAPE) == glfw.PRESS:
@@ -126,144 +234,171 @@ class App:
             return
 
         if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
-            self.minesweeper.print()
+            self.minesweeperBoard.print()
             print()
-
         if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
-            print(self.view)
-            print()
+            print(self.camera.position)
 
         t = glfw.get_time()
         dt = t - self.last_time
         self.last_time = t
 
-        speed = 5.0
+        speed = 2.0
         if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
-            self.view[0][3] += speed * dt
+            self.camera.position[2] += speed * dt
         elif glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
-            self.view[0][3] -= speed * dt
+            self.camera.position[2] -= speed * dt
 
         if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
-            self.view[1][3] += speed * dt
+            self.camera.position[0] += speed * dt
         elif glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
-            self.view[1][3] -= speed * dt
+            self.camera.position[0] -= speed * dt
 
         if glfw.get_key(self.window, glfw.KEY_SPACE) == glfw.PRESS:
-            self.view[2][3] += speed * dt
+            self.camera.position[1] -= speed * dt
         elif glfw.get_key(self.window, glfw.KEY_C) == glfw.PRESS:
-            self.view[2][3] -= speed * dt
+            self.camera.position[1] += speed * dt
 
-        view_loc = glGetUniformLocation(self.shader_program, "view")
-        glUniformMatrix4fv(view_loc, 1, GL_FALSE, self.view)
+        if glfw.get_key(self.window, glfw.KEY_F1) == glfw.PRESS:
+            if not self.f1_state_flag:
+                self.toggle_mouse_cursor()
+                self.f1_state_flag = True
+        else:
+            self.f1_state_flag = False
+
+        if glfw.get_key(self.window, glfw.KEY_N) == glfw.PRESS:
+            self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
+            self.update_mine_field_quad()
+
+        self.camera.update_view()
+
+    def toggle_mouse_cursor(self) -> None:
+
+        self.mouse_cursor_enabled = not self.mouse_cursor_enabled
+        if glfw.get_input_mode(self.window, glfw.CURSOR) == glfw.CURSOR_DISABLED:
+            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
+        else:
+            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_DISABLED)
 
     def render(self):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        self.field_quad.render(self.shader_program)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glUseProgram(self.shader)
+        self.texture.use()
+
+        glBindVertexArray(self.mine_field_quad.vao)
+        glDrawArrays(GL_TRIANGLES, 0, self.mine_field_quad.vertex_count)
 
         glfw.swap_buffers(self.window)
 
+    def quit(self):
+        self.mine_field_quad.destroy()
+        self.texture.destroy()
+        glDeleteProgram(self.shader)
+        glfw.terminate()
+
 class FieldQuad:
-    def __init__(self, cell_size, minesweeper):
-        self.model = np.array([[1.0, 0.0, 0.0, 0.0],
-                               [0.0, 1.0, 0.0, 0.0],
-                               [0.0, 0.0, 1.0, 0.0],
-                               [0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
 
-        image = Image.open("textures/atlas.png")
-        image = image.transpose(Image.FLIP_TOP_BOTTOM)
-        img_data = np.array(image).astype(np.uint8)
+    def __init__(self, minesweeper, cell_size):
 
-        self.texture_atlas = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.texture_atlas)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, MinesweeperCell.texture_atlas_size[0], MinesweeperCell.texture_atlas_size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
-        glGenerateMipmap(GL_TEXTURE_2D)
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-
-        self.create_buffer(cell_size=cell_size, minesweeper=minesweeper)
-
-    def create_buffer(self, cell_size, minesweeper):
-        vertices = [
-            # positions      # texture coords
-            -1.0,  1.0, 0.0, 0.0, 0.4,
-            -1.0, -1.0, 0.0, 0.0, 0.6,
-             1.0, -1.0, 0.0, 0.2, 0.6,
-             1.0,  1.0, 0.0, 0.2, 0.4]
-        indices = [0, 1, 2, 0, 2, 3]
-
+        # x, y, z, s, t
+        vertices = []
         size_x, size_y = minesweeper.size_x, minesweeper.size_y
         for y in range(size_y):
             y_pos = y*cell_size
             for x in range(size_x):
-                v0 = (x*cell_size, y_pos, 0)
-                v1 = (x*cell_size, y_pos + cell_size, 0)
-                v2 = (x*cell_size + cell_size, y_pos, 0)
-                v3 = (x*cell_size + cell_size, y_pos + cell_size, 0)
+                x_pos = x*cell_size
+                v0 = (x_pos, y_pos, 0)
+                v1 = (x_pos, y_pos + cell_size, 0)
+                v2 = (x_pos + cell_size, y_pos + cell_size, 0)
+                v3 = (x_pos + cell_size, y_pos, 0)
                 vts = MinesweeperCell.get_atlas_coords(minesweeper.get_cell(x, y))
 
                 vertices.extend(v0)
-                vertices.extend(vts[0])
-                vertices.extend(v1)
-                vertices.extend(vts[1])
-                vertices.extend(v2)
                 vertices.extend(vts[2])
+                vertices.extend(v1)
+                vertices.extend(vts[0])
+                vertices.extend(v2)
+                vertices.extend(vts[1])
+
+                vertices.extend(v2)
+                vertices.extend(vts[1])
                 vertices.extend(v3)
                 vertices.extend(vts[3])
+                vertices.extend(v0)
+                vertices.extend(vts[2])
 
-                offset = y * size_x + x * 20
-                indices.extend([offset, offset+1, offset+2, offset+1, offset+2, offset+3])
-                # print(x, y)
-                # print(vertices)
-                # print(indices)
-                # return
+        # import matplotlib.pyplot as plt
 
-        vertices = np.array(vertices, dtype=np.float32)
-        indices = np.array(indices, dtype=np.uint32)
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+
+        # vertexes = []
+        # for i in range(0, len(vertices), 5):
+        #     v = (vertices[i],vertices[i+1],vertices[i+2])
+        #     if v in vertexes:
+        #         continue
+        #     vertexes.append(v)
+
+        # x,y,z = [],[],[]
+        # for v in vertexes:
+        #     x.append(v[0])
+        #     y.append(v[1])
+        #     z.append(v[2])
+        # ax.scatter(x, y, z)
+
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+
+        # ax.axis('equal')
+
+        # plt.show()
+
+        self.vertex_count = len(vertices) // 5
+        self.vertices = np.array(vertices, dtype=np.float32)
 
         self.vao = glGenVertexArrays(1)
+        glBindVertexArray(self.vao)
         self.vbo = glGenBuffers(1)
-        self.ebo = glGenBuffers(1)
-
-        glBindVertexArray(self.vao)
-
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
-
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(0))
+        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
         glEnableVertexAttribArray(0)
-
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(12))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 20, ctypes.c_void_p(0))
         glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 20, ctypes.c_void_p(12))
 
-        glBindBuffer(GL_ARRAY_BUFFER, 0)
-        glBindVertexArray(0)
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+    def destroy(self):
 
-    def set_model_transformation(self, model):
-        self.model = model
+        glDeleteVertexArrays(1, (self.vao,))
+        glDeleteBuffers(1, (self.vbo,))
 
-    def render(self, shader_program):
-        model_loc = glGetUniformLocation(shader_program, "model")
-        glUniformMatrix4fv(model_loc, 1, GL_FALSE, self.model)
+class Texture:
 
-        glBindVertexArray(self.vao)
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
-        glBindVertexArray(0)
-    
-    # TODO: Fix the __del__ method????
-    # def __del__(self):
-    #     glDeleteVertexArrays(1, self.vao)
-    #     glDeleteBuffers(1, self.vbo)
-    #     glDeleteBuffers(1, self.ebo)
-    #     glDeleteTextures(1, self.texture_atlas)
+    def __init__(self, file_path):
+        self.texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-if __name__ == "__main__":
+        # Verwende Pillow, um das Bild zu laden
+        image = Image.open(file_path).convert("RGBA")
+        image_width, image_height = image.size
+        image_data = np.array(image.getdata(), np.uint8)
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data)
+        glGenerateMipmap(GL_TEXTURE_2D)
+
+    def use(self):
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.texture)
+
+    def destroy(self):
+
+        glDeleteTextures(1, (self.texture,))
+
+if __name__ == '__main__':
     app = App()
-    app.mainloop()

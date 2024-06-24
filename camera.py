@@ -9,8 +9,10 @@ class Camera:
                  screen_size,
                  near,
                  far,
-                 position,
-                 euler_rotation):
+                 position=np.array([0, 0, 0], dtype=np.float32),
+                 view_direction=np.array([1, 0, 0], dtype=np.float32),
+                 left_direction=np.array([0, 1, 0], dtype=np.float32),
+                 up_direction=np.array([0, 0, 1], dtype=np.float32)):
 
         self.shader = shader
 
@@ -20,7 +22,9 @@ class Camera:
         self.far = far
 
         self.position = position
-        self.euler_rotation = euler_rotation
+        self.view_direction = view_direction
+        self.left_direction = left_direction
+        self.up_direction = up_direction
 
         if self.shader is not None:
             self.projectionMatrixLocation = glGetUniformLocation(self.shader, "projection")
@@ -63,9 +67,9 @@ class Camera:
 
     def recalculate_view_matrix(self):
 
-        self.view_matrix = np.array([[1, 0, 0, self.position[0]],
-                                     [0, 1, 0, self.position[1]],
-                                     [0, 0, 1, self.position[2]],
+        self.view_matrix = np.array([[self.view_direction[0], self.left_direction[0], self.up_direction[0], -self.position[0]],
+                                     [self.view_direction[1], self.left_direction[1], self.up_direction[1], -self.position[1]],
+                                     [self.view_direction[2], self.left_direction[2], self.up_direction[2], -self.position[2]],
                                      [0, 0, 0, 1]], dtype=np.float32)
 
     def update_view(self):
@@ -74,15 +78,44 @@ class Camera:
 
         glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, self.view_matrix)
 
+    def translate_forward(self, distance: float):
+
+        self.position += distance * self.view_direction
+
+    def translate_left(self, distance: float):
+
+        # TODO: Check if the left direction is the right direction for the camera, so if it needs to be inverted (-= instead of +=).
+
+        self.position += distance * self.left_direction
+
+    def translate_up(self, distance: float):
+
+        self.position += distance * self.up_direction
+
+    def rotate_roll(self, angle: float):
+
+        self.apply_rotation_matrix(self.rotation_matrix(self.view_direction, -angle))
+
+    def rotate_pitch(self, angle: float):
+
+        self.apply_rotation_matrix(self.rotation_matrix(self.left_direction, angle))
+
+    def rotate_yaw(self, angle: float):
+
+        self.apply_rotation_matrix(self.rotation_matrix(self.up_direction, angle))
+
+    def apply_rotation_matrix(self, rotation_matrix: np.array):
+
+        self.view_direction = rotation_matrix.dot(self.view_direction)
+        self.left_direction = rotation_matrix.dot(self.left_direction)
+        self.up_direction = rotation_matrix.dot(self.up_direction)
+
     def get_ray(self) -> tuple:
 
         # ray is a vector starting at the camera position and pointing into the direction of the camera
         # the ray is defined by a point and a direction vector
 
-        # the direction is the negative z-axis of the camera
-        direction = np.array([0, 0, 1], dtype=np.float32)
-
-        return self.position, direction
+        return self.position, self.view_direction
 
     def get_ray_through_screen_pos(self, x, y):
         # Convert screen coordinates to NDC
@@ -95,62 +128,154 @@ class Camera:
 
         # Inverse view matrix to get camera coordinates
         inv_view_matrix = np.linalg.inv(self.view_matrix)
-        camera_near = np.dot(inv_view_matrix, ndc_near)
-        camera_far = np.dot(inv_view_matrix, ndc_far)
+        camera_near = inv_view_matrix.dot(ndc_near)
+        camera_far = inv_view_matrix.dot(ndc_far)
 
         camera_near /= camera_near[3]  # Perspective divide
         camera_far /= camera_far[3]    # Perspective divide
 
-        # Inverse projection matrix to get world coordinates
+        # Inverse projection matrix to get WCS coordinates
         inv_proj_matrix = np.linalg.inv(self.projection_matrix)
-        world_near = np.dot(inv_proj_matrix, camera_near)
-        world_far = np.dot(inv_proj_matrix, camera_far)
+        WCS_near = inv_proj_matrix.dot(camera_near)
+        WCS_far = inv_proj_matrix.dot(camera_far)
 
-        world_near /= world_near[3]  # Perspective divide
-        world_far /= world_far[3]    # Perspective divide
+        WCS_near /= WCS_near[3]  # Perspective divide
+        WCS_far /= WCS_far[3]    # Perspective divide
 
         # Calculate ray direction
-        ray_dir = world_far[:3] - world_near[:3]
+        ray_dir = WCS_far[:3] - WCS_near[:3]
         ray_dir /= np.linalg.norm(ray_dir)  # Normalize direction
 
         return self.position, ray_dir
 
-if __name__ == "__main__":
+    @staticmethod
+    def rotation_matrix(axis: np.array, angle: float) -> np.array:
+        """
+        Berechnet die Rotationsmatrix für die Rotation um eine gegebene Achse um ein gegebenen Winkel.
 
-    screen_size = (1920, 1080)
-    pos = np.array([-5, -5, -5], dtype=np.float32)
-    rot = np.array([0, 0, 0], dtype=np.float32)
-    camera = Camera(None, np.radians(90), screen_size, 0.1, 100.0, pos, rot)
+        :param angle: Der Rotationswinkel in Grad
+        :param axis: Ein 3D-Vektor (NumPy-Array), der die Rotationsachse definiert
+        :return: Eine 3x3-Rotationsmatrix
+        """
+        # Normiere die Achse
+        axis = axis / np.linalg.norm(axis)
+
+        # Extrahiere die Komponenten des normierten Achsenvektors
+        x, y, z = axis
+
+        # Berechne die Sinus- und Kosinuswerte des Winkels
+        a = np.deg2rad(angle)
+        cos_a = np.cos(a)
+        sin_a = np.sin(a)
+
+        # Berechne die Rotationsmatrix unter Verwendung der Rodrigues-Formel
+        R = np.array([
+            [cos_a + x*x*(1 - cos_a), x*y*(1 - cos_a) - z*sin_a, x*z*(1 - cos_a) + y*sin_a],
+            [y*x*(1 - cos_a) + z*sin_a, cos_a + y*y*(1 - cos_a), y*z*(1 - cos_a) - x*sin_a],
+            [z*x*(1 - cos_a) - y*sin_a, z*y*(1 - cos_a) + x*sin_a, cos_a + z*z*(1 - cos_a)]
+        ])
+
+        return R
+
+def debug_plot_camera(camera):
 
     import matplotlib.pyplot as plt
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    fig = plt.figure(figsize=(15, 5))
 
-    x,y,z = [],[],[]
+    # world coordinate system
+    WCS = fig.add_subplot(131, projection="3d")  # 1 row, 3 columns, first plot
+    WCS.set_title("World Coordinate System")
+
+    WCS.scatter(0, 0, 0, marker='o', c="black", alpha=0.2, s=500)
+
+    # vertices
+    v_x,v_y,v_z = [],[],[]
+    wcs_vertices = []
     for iy in range(11):
         for ix in range(11):
-            x.append(ix)
-            y.append(iy)
-            z.append(0)
-    ax.scatter(x, y, z)
+            v_x.append(ix)
+            v_y.append(iy)
+            v_z.append(0)
+            wcs_vertices.append(np.array([ix, iy, 0]))
+    WCS.scatter(v_x, v_y, v_z)
 
-    pos, dir = camera.get_ray()
-    ax.quiver(pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], color='b')
-    pos, dir = camera.get_ray_through_screen_pos(0, 0)
-    ax.quiver(pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], color='r')
+    # camera
+    p_x, p_y = camera.screen_size[0], camera.screen_size[1]
+    pos, forward_through_screen_pos = camera.get_ray_through_screen_pos(p_x/2, p_y/2)
+    pos, forward = camera.get_ray()
+    left, up = camera.left_direction, camera.up_direction
+    if np.all(forward_through_screen_pos == forward):
+        forward = forward_through_screen_pos
+    else:
+        print("TODO: fix get_ray_through_screen_pos")
+    WCS.quiver(pos[0], pos[1], pos[2], forward[0], forward[1], forward[2], color='r')
+    WCS.quiver(pos[0], pos[1], pos[2], left[0], left[1], left[2], color='g')
+    WCS.quiver(pos[0], pos[1], pos[2], up[0], up[1], up[2], color='b')
 
-    camera.position = np.array([0, 0, 0], dtype=np.float32)
+    WCS.set_xlabel('X')
+    WCS.set_ylabel('Y')
+    WCS.set_zlabel('Z')
 
-    pos, dir = camera.get_ray()
-    ax.quiver(pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], color='b')
-    pos, dir = camera.get_ray_through_screen_pos(0, 0)
-    ax.quiver(pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], color='r')
+    WCS.axis('equal')
 
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+    # camera coordinate system
+    CCS = fig.add_subplot(132, projection="3d")  # 1 row, 3 columns, second plot
+    CCS.set_title("Camera Coordinate System")
 
-    ax.axis('equal')
+    # vertices
+    view_matrix = camera.get_view_matrix()
+    ccs_vertices = []
+    for vertex in wcs_vertices:
+        vertex = np.append(vertex, 1)
+        ccs_vertices.append(view_matrix.dot(vertex)) # TODO: fix this, it is not correct
+    ccs_vertices = np.array(ccs_vertices)
+    CCS.scatter(ccs_vertices[:, 0], ccs_vertices[:, 1], ccs_vertices[:, 2])
 
+    # near and far plane
+    fov_half = camera.fov/2
+    ratio = camera.screen_size[0]/camera.screen_size[1]
+    for distance in [camera.near, 1]:
+        frame_x = distance
+        frame_y = distance * np.tan(fov_half)
+        frame_z = frame_y/ratio
+        CCS.plot([frame_x, frame_x, frame_x, frame_x, frame_x], [-frame_y, -frame_y, frame_y, frame_y, -frame_y], [-frame_z, frame_z, frame_z, -frame_z, -frame_z], 'k-')
+
+    # camera
+    CCS.quiver(0, 0, 0, 1, 0, 0, color='r')
+    CCS.quiver(0, 0, 0, 0, 1, 0, color='g')
+    CCS.quiver(0, 0, 0, 0, 0, 1, color='b')
+
+    CCS.set_xlabel('X')
+    CCS.set_ylabel('Y')
+    CCS.set_zlabel('Z')
+
+    CCS.axis('equal')
+
+    # screen coordinate system
+    SCS = fig.add_subplot(133)  # 1 row, 3 columns, third plot
+    SCS.set_title("Screen Coordinate System")
+
+    SCS.plot([0, p_x, p_x, 0, 0], [0, 0, p_y, p_y, 0], 'k-')
+
+    SCS.set_xlabel('X')
+    SCS.set_xlim(0, p_x)
+    SCS.set_ylabel('Y')
+    SCS.set_ylim(0, p_y)
+    SCS.set_aspect(aspect=16/9, adjustable='box')
+
+    SCS.axis('equal')
+
+    plt.tight_layout()
     plt.show()
+
+if __name__ == "__main__":
+
+    screen_size = (1920, 1080)
+    pos = np.array([0, 0, 5], dtype=np.float32)
+    f = np.array([0, 0, -1], dtype=np.float32)
+    l = np.array([0, 1, 0], dtype=np.float32)
+    u = np.array([1, 0, 0], dtype=np.float32)
+    camera = Camera(None, np.radians(110), screen_size, 0.1, 100.0, pos, f, l, u)
+
+    debug_plot_camera(camera)

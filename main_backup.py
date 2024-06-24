@@ -181,17 +181,18 @@ class App:
             ray_pos, ray_dir = self.camera.get_ray()
             hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
             v = np.array([-1*hit_position[0], -1*hit_position[1], -1*hit_position[2], 1])
-            print(f"{v} -> {v@self.camera.get_projection_matrix()@self.camera.get_view_matrix()}")
+            # print(f"{v} -> {v@self.camera.get_projection_matrix()@self.camera.get_view_matrix()}") # TODO: remove
         else:
             ray_pos, ray_dir = self.camera.get_ray()
             hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
             hit_position = -1 * hit_position
 
-        print(f"screen pixel: {x}, {y}")
-        print(f"view: {self.camera.get_view_matrix()}")
-        print(f"proj: {self.camera.get_projection_matrix()}")
-        print(f"ray: {ray_pos, ray_dir}")
-        print(f"world coord: {hit_position}")
+        # TODO: remove
+        # print(f"screen pixel: {x}, {y}")
+        # print(f"view: {self.camera.get_view_matrix()}")
+        # print(f"proj: {self.camera.get_projection_matrix()}")
+        # print(f"ray: {ray_pos, ray_dir}")
+        # print(f"world coord: {hit_position}")
 
         # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
         # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
@@ -207,7 +208,7 @@ class App:
 
             x, y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
 
-            print(f"game cell: {x}, {y}")
+            # print(f"game cell: {x}, {y}") # TODO: remove
 
             call(self.minesweeperBoard.get_cell(x, y))
 
@@ -398,11 +399,6 @@ class Texture:
     def destroy(self):
 
         glDeleteTextures(1, (self.texture,))
-
-class UI:
-
-    def __init__(self, app):
-        self.app = app
 
 if __name__ == '__main__':
     app = App()
