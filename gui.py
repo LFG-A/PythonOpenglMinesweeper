@@ -5,35 +5,53 @@ import numpy as np
 
 from camera import Camera
 
-def CREATE_SHADER(vertex_file_path, fragment_file_path):
+class Gui:
 
-    with open(vertex_file_path, 'r') as file:
-        vertex_src = file.readlines()
-    with open(fragment_file_path, 'r') as file:
-        fragment_src = file.readlines()
+    @staticmethod
+    def create_shader(vertex_file_path, fragment_file_path):
 
-    shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
-                            compileShader(fragment_src, GL_FRAGMENT_SHADER))
+        with open(vertex_file_path, 'r') as file:
+            vertex_src = file.readlines()
+        with open(fragment_file_path, 'r') as file:
+            fragment_src = file.readlines()
 
-    return shader
+        shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
+                                compileShader(fragment_src, GL_FRAGMENT_SHADER))
 
-GUI_FRAGCOLOR_SHADER = CREATE_SHADER("shaders/2d_fragColor__vertex_shader.glsl", "shaders/2d_fragColor__fragment_shader.glsl")
+        return shader
 
 class GuiFrame:
+    """
+    A class used to manage and render a frame as GUI on the screen.
+
+    Attributes
+    ----------
+    not documented
+
+    Methods
+    -------
+    not documented
+    """
 
     def __init__(self, type="quad",
-                 size_type="pixel", size=(100, 50),
-                 pos_type="pixel", pos=(100, 100),
-                 background_type="color", background=(0.2, 0.2, 0.2),
+                 size_type="screenspace", size=(0.2, 0.2),
+                 pos_type="screenspace", pos=(0.25, 0.5),
+                 background_type="rgb", background=(0.2, 0.2, 0.2),
                  oppacity=0.5) -> None:
 
         vertices = self.create_vertices(size_type, size, pos_type, pos, background_type, background, oppacity)
+        self.vertex_count = len(vertices[0])
+        print(self.vertex_count)
+        vertices = [vertex for vertices in vertices for vertex in vertices]
+        print(vertices)
+        vertices = np.array(vertices, dtype=np.float32)
+        print(vertices)
 
         self.vao = glGenVertexArrays(1)
         glBindVertexArray(self.vao)
         self.vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, vertices, GL_STATIC_DRAW)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 20, ctypes.c_void_p(0))
         glEnableVertexAttribArray(1)
@@ -42,63 +60,61 @@ class GuiFrame:
     def render(self) -> None:
 
         glUseProgram(self.shader)
-        self.texture.use()
 
-        glBindVertexArray(self.mine_field_quad.vao)
-        glDrawArrays(GL_TRIANGLES, 0, self.mine_field_quad.vertex_count)
+        glBindVertexArray(self.vao)
+        glDrawArrays(GL_TRIANGLES, 0, self.vertex_count)
 
     def destroy(self) -> None:
 
         glDeleteVertexArrays(1, (self.vao,))
         glDeleteBuffers(1, (self.vbo,))
 
-    @staticmethod
-    def create_vertices(size_type, size, pos_type, pos, background_type, background, oppacity) -> np.array:
+        glDeleteProgram(self.shader)
 
-        if size_type == "pixel":
+    def create_vertices(self, size_type, size, pos_type, pos, background_type, background, oppacity) -> np.array:
+
+        # vertices = [x, y, z, r, g, b, a] for background_type == "rgb" && oppacity != None
+
+        if size_type == "screenspace":
             pixel_size = size
         else:
-            raise ValueError("size_type must be 'pixel', other types are not implemented.")
+            raise ValueError("size_type must be 'screenspace', other types are not implemented.")
 
-        if pos_type == "pixel":
+        if pos_type == "screenspace":
             pixel_pos = pos
         else:
-            raise ValueError("pos_type must be 'pixel', other types are not implemented.")
+            raise ValueError("pos_type must be 'screenspace', other types are not implemented.")
 
-        if background_type == "color":
-            color = background
+        v0 = [pixel_pos[0]                , pixel_pos[1] + pixel_size[1]]
+        v1 = [pixel_pos[0]                , pixel_pos[1]]
+        v2 = [pixel_pos[0] + pixel_size[0], pixel_pos[1]]
+        v3 = [pixel_pos[0] + pixel_size[0], pixel_pos[1] + pixel_size[1]]
+
+        if background_type == "rgb":
+            for value in background:
+                if value < 0.0:
+                    value = 0.0
+                elif value > 1.0:
+                    value = 1.0
+            self.shader = Gui.create_shader("shaders/2d_fragColor_vertex_shader.glsl", "shaders/2d_fragColor_fragment_shader.glsl")
+            v0.extend(background)
+            v1.extend(background)
+            v2.extend(background)
+            v3.extend(background)
         else:
-            raise ValueError("background_type must be 'color', other types are not implemented.")
+            raise ValueError("background_type must be 'rgba', other types are not implemented.")
 
-        v0 = (pixel_pos[0]                , pixel_pos[1] + pixel_size[1])
-        v1 = (pixel_pos[0]                , pixel_pos[1])
-        v2 = (pixel_pos[0] + pixel_size[0], pixel_pos[1])
-        v3 = (pixel_pos[0] + pixel_size[0], pixel_pos[1] + pixel_size[1])
+        if oppacity is not None:
+            if oppacity < 0.0:
+                oppacity = 0.0
+            elif oppacity > 1.0:
+                oppacity = 1.0
+            v0.append(oppacity)
+            v1.append(oppacity)
+            v2.append(oppacity)
+            v3.append(oppacity)
 
-        # vertices = [x, y, z, r, g, b, a]
-        vertices = []
-        vertices.extend(v0)
-        vertices.extend(color)
-        vertices.append(oppacity)
-        vertices.extend(v1)
-        vertices.extend(color)
-        vertices.append(oppacity)
-        vertices.extend(v2)
-        vertices.extend(color)
-        vertices.append(oppacity)
-        vertices.extend(v0)
-        vertices.extend(color)
-        vertices.append(oppacity)
-        vertices.extend(v2)
-        vertices.extend(color)
-        vertices.append(oppacity)
-        vertices.extend(v3)
-        vertices.extend(color)
-        vertices.append(oppacity)
-
-        vertices = np.array(vertices, dtype=np.float32)
-
-        print(vertices)
+        vertices = [v0, v1, v2, v0, v2, v3]
 
         return vertices
 
@@ -131,10 +147,10 @@ class App:
         glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
 
         fov = 110
-        pos = np.array([0, 0, 5], dtype=np.float32)
-        f = np.array([0, 0, -1], dtype=np.float32)
+        pos = np.array([0, 0, 0], dtype=np.float32)
+        f = np.array([1, 0, 0], dtype=np.float32)
         l = np.array([0, 1, 0], dtype=np.float32)
-        u = np.array([1, 0, 0], dtype=np.float32)
+        u = np.array([0, 0, 1], dtype=np.float32)
         self.camera = Camera(self.shader, np.radians(fov), screen_size, 0.1, 100.0, pos, f, l, u)
 
         self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
@@ -186,7 +202,7 @@ class App:
             return
 
         if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
-            print(f"camera pos,view,up: {self.camera.position}, {self.camera.view}, {self.camera.up}")
+            print(f"camera pos,view_direction,up: {self.camera.position}, {self.camera.view_direction}, {self.camera.up_direction}")
 
         t = glfw.get_time()
         dt = t - self.last_time

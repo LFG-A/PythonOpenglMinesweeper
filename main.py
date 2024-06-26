@@ -146,7 +146,8 @@ class App:
 
         return hit_position
 
-    def create_shader(self, vertex_file_path, fragment_file_path):
+    @staticmethod
+    def create_shader(vertex_file_path, fragment_file_path):
 
         with open(vertex_file_path, 'r') as file:
             vertex_src = file.readlines()
