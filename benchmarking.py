@@ -66,5 +66,51 @@ def benchmark_cross_product():
     for key, value in times.items():
         print(f"{key} average time: {(np.mean(value) / len(vertices)) * 1000000} µs.")
 
+
+"""-----------------------------------------------------------------------------------------------------------------"""
+
+
+def benchmark_normalizing_vec3():
+
+    # Create large example vertices list
+    vertices = []
+    for iz in range(100):
+        for iy in range(100):
+            for ix in range(100):
+                vertices.append(np.array([ix, iy, iz, 1], dtype=np.float32))
+
+    times = {"(np.linalg.norm(vertex))": [], "(np.sqrt(vertex.dot(vertex)))": []}
+    runs = 3
+    for i in range(runs):
+
+        # Benchmark np.linalg.norm(vertex)
+        start_time = time.time()
+        linalg = []
+        for vertex in vertices:
+            linalg.append(np.linalg.norm(vertex))
+        end_time = time.time()
+        times["(np.linalg.norm(vertex))"].append(end_time - start_time)
+        print("np.linalg.norm(vertex) time: {:.6f} seconds".format(end_time - start_time))
+
+        # Benchmark np.sqrt(vertex.dot(vertex))
+        start_time = time.time()
+        dot = []
+        for vertex in vertices:
+            dot.append(np.sqrt(vertex.dot(vertex)))
+        end_time = time.time()
+        times["(np.sqrt(vertex.dot(vertex)))"].append(end_time - start_time)
+        print("np.sqrt(vertex.dot(vertex)) time: {:.6f} seconds".format(end_time - start_time))
+
+    print("\nBenchmarking results:\n")
+    print(f"{runs} runs for {len(vertices)} vertices...")
+
+    for key, value in times.items():
+        print(f"{key} average time: {(np.mean(value) / len(vertices)) * 1000000} µs.")
+
+
+
 if __name__ == "__main__":
-    benchmark_cross_product()
+
+    # benchmark_cross_product()
+
+    benchmark_normalizing_vec3()
