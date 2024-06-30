@@ -70,7 +70,10 @@ class MinesweeperBoard:
         cell.flagged = not cell.flagged
     
     def get_cell(self, x: int, y: int):
-        return self.board[y * self.size_x + x]
+        index = y * self.size_x + x
+        if index < 0 or index >= self.size_x * self.size_y:
+            return None
+        return self.board[index]
 
     def print(self):
         for y in range(self.size_y):

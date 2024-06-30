@@ -108,9 +108,50 @@ def benchmark_normalizing_vec3():
         print(f"{key} average time: {(np.mean(value) / len(vertices)) * 1000000} µs.")
 
 
+"""-----------------------------------------------------------------------------------------------------------------"""
+
+
+def benchmark_smaller_then():
+
+    # Create large example vertices list
+    vertices = []
+    for iz in range(1000):
+        vertices.append(np.random.uniform(-1, 1, 1))
+
+    times = {"(vertex < 0)": [], "(vertex <= 0)": []}
+    runs = 50
+    for i in range(runs):
+
+        # Benchmark (vertex < 0)
+        start_time = time.time()
+        erg = []
+        for vertex in vertices:
+            erg.append((vertex < 0))
+        end_time = time.time()
+        times["(vertex < 0)"].append(end_time - start_time)
+        print("(vertex < 0) time: {:.6f} seconds".format(end_time - start_time))
+
+        # Benchmark (vertex <= 0)
+        start_time = time.time()
+        erg2 = []
+        for vertex in vertices:
+            erg2.append((vertex <= 0))
+        end_time = time.time()
+        times["(vertex <= 0)"].append(end_time - start_time)
+        print("(vertex <= 0) time: {:.6f} seconds".format(end_time - start_time))
+
+    print("\nBenchmarking results:\n")
+    print(f"{runs} runs for {len(vertices)} vertices...")
+
+    for key, value in times.items():
+        print(f"{key} average time: {(np.mean(value) / len(vertices)) * 1000000} µs.")
+
+
 
 if __name__ == "__main__":
 
     # benchmark_cross_product()
 
-    benchmark_normalizing_vec3()
+    # benchmark_normalizing_vec3()
+
+    benchmark_smaller_then()

@@ -5,11 +5,11 @@ class Camera:
 
     def __init__(self,
                  shader,
-                 fov,
-                 screen_size,
-                 near,
-                 far,
-                 position=np.array([0, 0, 0], dtype=np.float32),
+                 fov: float = np.radians(110),
+                 screen_size: tuple = (1920, 1080),
+                 near: float = 0.1,
+                 far: float = 100.0,
+                 position=np.array([-5, 0, 0], dtype=np.float32),
                  view_direction=np.array([1, 0, 0], dtype=np.float32),
                  left_direction=np.array([0, 1, 0], dtype=np.float32),
                  up_direction=np.array([0, 0, 1], dtype=np.float32)):
@@ -26,19 +26,15 @@ class Camera:
         self.left_direction = left_direction
         self.up_direction = up_direction
 
+        self.recalculate_projection_matrix()
+        self.recalculate_view_matrix()
+
         if self.shader is not None:
             self.projectionMatrixLocation = glGetUniformLocation(self.shader, "projection")
-            self.update_projection()
+            self.update_projection_matrix()
 
             self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
-            self.update_view()
-        else:
-            self.recalculate_projection_matrix()
-            self.recalculate_view_matrix()
-
-    def __setattr__(self, name: str, value) -> None:
-        # raise AttributeError(f"Attribute '{name}' is read-only")
-        super().__setattr__(name, value)
+            self.update_view_matrix()
 
     def get_projection_matrix(self) -> np.ndarray:
 
@@ -55,9 +51,7 @@ class Camera:
                                            [0, 0, a, -1],
                                            [0, 0, b, 0]], dtype=np.float32)
 
-    def update_projection(self):
-
-        self.recalculate_projection_matrix()
+    def update_projection_matrix(self):
 
         glUniformMatrix4fv(self.projectionMatrixLocation, 1, GL_FALSE, self.projection_matrix)
 
@@ -72,9 +66,7 @@ class Camera:
                                      [self.view_direction[2], self.left_direction[2], self.up_direction[2], -self.position[2]],
                                      [0, 0, 0, 1]], dtype=np.float32)
 
-    def update_view(self):
-
-        self.recalculate_view_matrix()
+    def update_view_matrix(self):
 
         glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, self.view_matrix)
 
@@ -84,8 +76,6 @@ class Camera:
 
     def translate_left(self, distance: float):
 
-        # TODO: Check if the left direction is the right direction for the camera, so if it needs to be inverted (-= instead of +=).
-
         self.position += distance * self.left_direction
 
     def translate_up(self, distance: float):
@@ -94,7 +84,7 @@ class Camera:
 
     def rotate_roll(self, angle: float):
 
-        self.apply_rotation_matrix(self.rotation_matrix(self.view_direction, -angle))
+        self.apply_rotation_matrix(self.rotation_matrix(self.view_direction, angle))
 
     def rotate_pitch(self, angle: float):
 
@@ -176,6 +166,38 @@ class Camera:
         ])
 
         return R
+
+    def get_screen_corners(self):
+
+        f = self.near
+        fov = self.fov
+        aspect_ratio = self.screen_size[0] / self.screen_size[1]
+        corners = [[f, f * np.tan(np.radians(fov / 2)), f * np.tan(np.radians(fov / 2)) / aspect_ratio],
+                    [f, -f * np.tan(np.radians(fov / 2)), f * np.tan(np.radians(fov / 2)) / aspect_ratio],
+                    [f, -f * np.tan(np.radians(fov / 2)), -f * np.tan(np.radians(fov / 2)) / aspect_ratio],
+                    [f, f * np.tan(np.radians(fov / 2)), -f * np.tan(np.radians(fov / 2)) / aspect_ratio]]
+        return corners
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def debug_plot_camera(camera):
 
@@ -272,10 +294,10 @@ def debug_plot_camera(camera):
 if __name__ == "__main__":
 
     screen_size = (1920, 1080)
-    pos = np.array([0, 0, 5], dtype=np.float32)
-    f = np.array([0, 0, -1], dtype=np.float32)
+    pos = np.array([5, 5, 5], dtype=np.float32)
+    v = np.array([0, 0, -1], dtype=np.float32)
     l = np.array([0, 1, 0], dtype=np.float32)
     u = np.array([1, 0, 0], dtype=np.float32)
-    camera = Camera(None, np.radians(110), screen_size, 0.1, 100.0, pos, f, l, u)
+    camera = Camera(None, np.radians(110), screen_size, 0.1, 100.0, pos, v, l, u)
 
     debug_plot_camera(camera)
