@@ -66,10 +66,6 @@ class Camera:
         self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
         self.update_view()
 
-    def __setattr__(self, name: str, value) -> None:
-        # raise AttributeError(f"Attribute '{name}' is read-only")
-        super().__setattr__(name, value)
-
     def get_projection_matrix(self) -> np.ndarray:
 
         return self.projection_matrix
@@ -114,29 +110,43 @@ class Camera:
 
     def get_ray_through_screen_pos(self, x, y):
 
-        direction = self.view_direction
-        left = self.left_direction
-        up = self.up_direction
+        # width, height = self.screen_size
+        # x_ndc = (2.0 * x) / width - 1.0
+        # y_ndc = 1.0 - (2.0 * y) / height
+        # x_norm = (x/(width-1))*2-1
+        # y_norm = 1-(y/(height-1))*2
+        # print(f"norm: {x_norm:.4f}, {y_norm:.4f}")
+        # print(f"ndc:  {x_ndc:.4f}, {y_ndc:.4f}")
+        # z_ndc = -self.near
+        # w_ndc = 1.0
+        # ndc_coords = np.array([x_ndc, y_ndc, z_ndc, w_ndc])
+        # projection_matrix_inv = np.linalg.inv(self.projection_matrix)
+        # camera_coords = projection_matrix_inv.dot(ndc_coords)
+        # camera_coords = projection_matrix_inv.dot(ndc_coords)
+        # camera_coords /= camera_coords[3]
+        # ray_direction = camera_coords[:3]
+        # ray_direction = ray_direction / np.linalg.norm(ray_direction)
+        # ray_direction_world = self.view_matrix[:3, :3].dot(ray_direction)
+        # return self.position, ray_direction_world
 
-        fov_x = self.fov
-        fov_y = fov_x / self.aspect
-        near = self.near
-        width = self.screen_size[0]
-        height = self.screen_size[1]
-
-        x_length = np.tan(fov_x / 2)*near
-        y_length = np.tan(fov_y / 2)*near
-
+        width, height = self.screen_size
         x_norm = (x/(width-1))*2-1
         y_norm = 1-(y/(height-1))*2
+        print(f"{x},{y}, norm: {x_norm:.4f}, {y_norm:.4f}", end=", ")
+
+        fov_x = self.fov
+        x_length = np.tan(fov_x / 2)
+        y_length = x_length / self.aspect
 
         x_click_length = x_length*x_norm
         y_click_length = y_length*y_norm
+        print(f"clicklengths: {x_click_length:.4f}, {y_click_length:.4f}", end=", ")
 
-        yaw_angle = np.arctan(x_click_length / near)
-        pitch_angle = np.arctan(y_click_length / near)
+        yaw_angle = -np.arctan(x_click_length)
+        pitch_angle = -np.arctan(y_click_length)
+        print(f"angles: {np.degrees(yaw_angle):.4f}, {np.degrees(pitch_angle):.4f}", end=", ")
 
-        direction = Camera.rotation_matrix(up, -yaw_angle).dot(Camera.rotation_matrix(left, -pitch_angle).dot(direction))
+        direction = Camera.rotation_matrix(self.up_direction, yaw_angle).dot(Camera.rotation_matrix(self.left_direction, pitch_angle).dot(self.view_direction))
 
         return self.position, direction
 
@@ -187,8 +197,8 @@ class App:
 
         camera_position = np.array([(self.minesweeperBoard.size_x*self.cell_size)/2, (self.minesweeperBoard.size_y*self.cell_size)/2, 5], dtype=np.float32)
         camera_view_direction = np.array([0, 0, -1], dtype=np.float32)
-        camera_left_direction = np.array([0, 1, 0], dtype=np.float32)
-        camera_up_direction = np.array([1, 0, 0], dtype=np.float32)
+        camera_left_direction = np.array([-1, 0, 0], dtype=np.float32)
+        camera_up_direction = np.array([0, 1, 0], dtype=np.float32)
         self.camera = Camera(self.shader, screen_size=screen_size, position=camera_position, view_direction=camera_view_direction, left_direction=camera_left_direction, up_direction=camera_up_direction)
 
         self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
@@ -226,9 +236,9 @@ class App:
     @staticmethod
     def create_shader(vertex_file_path, fragment_file_path):
 
-        with open(vertex_file_path, 'r') as file:
+        with open(vertex_file_path, "r") as file:
             vertex_src = file.readlines()
-        with open(fragment_file_path, 'r') as file:
+        with open(fragment_file_path, "r") as file:
             fragment_src = file.readlines()
 
         shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
@@ -258,17 +268,32 @@ class App:
             ray_pos, ray_dir = self.camera.get_ray()
             hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
 
-        np.set_printoptions(precision=4) # TODO: remove
-        print(f"({x}, {y}), {ray_pos}, {ray_dir} -> {hit_position}")
-
         if hit_position is not None:
 
-            x, y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
+            field_x, field_y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
 
-            cell = self.minesweeperBoard.get_cell(x, y)
+            cell = self.minesweeperBoard.get_cell(field_x, field_y)
             if cell is not None:
                 call(cell)
                 self.update_mine_field_quad()
+        
+        print(f"hit: {hit_position[0]:.4f}, {hit_position[1]:.4f}, {hit_position[2]:.4f}")
+
+        c_pos = self.camera.position
+        c_view = self.camera.view_direction
+        c_left = self.camera.left_direction
+        c_up = self.camera.up_direction
+
+        # np.set_printoptions(precision=4) # TODO: remove
+        # print(f"({x}, {y}), ({ray_pos}/{c_pos}), {ray_dir} -> {hit_position[0]:.4f}, {hit_position[1]:.4f}, {hit_position[2]:.4f}") # TODO: remove
+
+        WCS.quiver(c_pos[0], c_pos[1], c_pos[2], c_view[0], c_view[1], c_view[2], color="red")
+        WCS.quiver(c_pos[0], c_pos[1], c_pos[2], c_left[0], c_left[1], c_left[2], color="green")
+        WCS.quiver(c_pos[0], c_pos[1], c_pos[2], c_up[0], c_up[1], c_up[2], color="blue")
+
+        WCS.quiver(ray_pos[0], ray_pos[1], ray_pos[2], ray_dir[0], ray_dir[1], ray_dir[2], color="red")
+        WCS.plot([ray_pos[0], hit_position[0]], [ray_pos[1], hit_position[1]], [ray_pos[2], hit_position[2]], color="red", linestyle="dashdot")
+        WCS.text(hit_position[0], hit_position[1], hit_position[2], f"({x}, {y})", color="red")
 
     def update_mine_field_quad(self):
 
@@ -388,32 +413,18 @@ class FieldQuad:
                 vertices.extend(v0)
                 vertices.extend(vts[2])
 
-        # import matplotlib.pyplot as plt
-
-        # fig = plt.figure()
-        # ax = fig.add_subplot(111, projection='3d')
-
-        # vertexes = []
-        # for i in range(0, len(vertices), 5):
-        #     v = (vertices[i],vertices[i+1],vertices[i+2])
-        #     if v in vertexes:
-        #         continue
-        #     vertexes.append(v)
-
-        # x,y,z = [],[],[]
-        # for v in vertexes:
-        #     x.append(v[0])
-        #     y.append(v[1])
-        #     z.append(v[2])
-        # ax.scatter(x, y, z)
-
-        # ax.set_xlabel('X')
-        # ax.set_ylabel('Y')
-        # ax.set_zlabel('Z')
-
-        # ax.axis('equal')
-
-        # plt.show()
+        vertexes = []
+        for i in range(0, len(vertices), 5):
+            v = (vertices[i],vertices[i+1],vertices[i+2])
+            if v in vertexes:
+                continue
+            vertexes.append(v)
+        x,y,z = [],[],[]
+        for v in vertexes:
+            x.append(v[0])
+            y.append(v[1])
+            z.append(v[2])
+        WCS.scatter(x, y, z, color="black")
 
         self.vertex_count = len(vertices) // 5
         self.vertices = np.array(vertices, dtype=np.float32)
@@ -460,5 +471,27 @@ class Texture:
 
         glDeleteTextures(1, (self.texture,))
 
-if __name__ == '__main__':
+
+
+
+
+
+
+
+
+"""
+Debugging through visualization
+"""
+import matplotlib.pyplot as plt
+
+fig = plt.figure()
+WCS = fig.add_subplot(111, projection="3d")
+WCS.set_xlabel("X")
+WCS.set_ylabel("Y")
+WCS.set_zlabel("Z")
+
+if __name__ == "__main__":
     app = App()
+
+WCS.axis("equal")
+plt.show()
