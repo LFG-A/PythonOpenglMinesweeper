@@ -4,163 +4,12 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
 from PIL import Image
 
+
+
 from minesweeper import *
+from camera import Camera
 
-class Camera:
 
-    @staticmethod
-    def rotation_matrix(axis: np.array, angle: float) -> np.array:
-        """
-        Berechnet die Rotationsmatrix für die Rotation um eine gegebene Achse um ein gegebenen Winkel.
-
-        :param angle: Der Rotationswinkel in Grad
-        :param axis: Ein 3D-Vektor (NumPy-Array), der die Rotationsachse definiert
-        :return: Eine 3x3-Rotationsmatrix
-        """
-        # Normiere die Achse
-        axis = axis / np.linalg.norm(axis)
-
-        # Extrahiere die Komponenten des normierten Achsenvektors
-        x, y, z = axis
-
-        # Berechne die Sinus- und Kosinuswerte des Winkels
-        cos_a = np.cos(angle)
-        sin_a = np.sin(angle)
-
-        # Berechne die Rotationsmatrix unter Verwendung der Rodrigues-Formel
-        R = np.array([
-            [cos_a + x*x*(1 - cos_a), x*y*(1 - cos_a) - z*sin_a, x*z*(1 - cos_a) + y*sin_a],
-            [y*x*(1 - cos_a) + z*sin_a, cos_a + y*y*(1 - cos_a), y*z*(1 - cos_a) - x*sin_a],
-            [z*x*(1 - cos_a) - y*sin_a, z*y*(1 - cos_a) + x*sin_a, cos_a + z*z*(1 - cos_a)]
-        ])
-
-        return R
-
-    def __init__(self,
-                 shader,
-                 fov: float =np.radians(90),
-                 screen_size: tuple =(1920, 1080),
-                 near: float =0.1,
-                 far: float =100.0,
-                 position:np.array =np.array([0, 0, 0], dtype=np.float32),
-                 view_direction:np.array =np.array([1, 0, 0], dtype=np.float32),
-                 left_direction:np.array =np.array([0, 1, 0], dtype=np.float32),
-                 up_direction:np.array =np.array([0, 0, 1], dtype=np.float32)):
-
-        self.shader = shader
-
-        self.fov = fov
-        self.screen_size = screen_size
-        self.aspect = screen_size[0] / screen_size[1]
-        self.near = near
-        self.far = far
-
-        self.position = position
-        self.view_direction = view_direction # TODO: implement view_direction
-        self.left_direction = left_direction # TODO: implement left_direction
-        self.up_direction = up_direction # TODO: implement up_direction
-
-        self.projectionMatrixLocation = glGetUniformLocation(self.shader, "projection")
-        self.update_projection()
-
-        self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
-        self.update_view()
-
-    def get_projection_matrix(self) -> np.ndarray:
-
-        return self.projection_matrix
-
-    def update_projection(self):
-
-        near, far = self.near, self.far
-        denominator = near - far
-        f = 1.0 / np.tan(self.fov / 2.0)
-        a = (far + near) / denominator
-        b = (2.0 * far * near) / denominator
-        self.projection_matrix = np.array([[f / self.aspect, 0, 0, 0],
-                                           [0, f, 0, 0],
-                                           [0, 0, a, -1],
-                                           [0, 0, b, 0]], dtype=np.float32)
-
-        glUniformMatrix4fv(self.projectionMatrixLocation, 1, GL_FALSE, self.projection_matrix)
-
-    def get_view_matrix(self) -> np.ndarray:
-
-        return self.view_matrix
-
-    def update_view(self):
-
-        # self.view_matrix = np.array([[self.view_direction[0], self.left_direction[0], self.up_direction[0], -self.position[0]],
-        #                              [self.view_direction[1], self.left_direction[1], self.up_direction[1], -self.position[1]],
-        #                              [self.view_direction[2], self.left_direction[2], self.up_direction[2], -self.position[2]],
-        #                              [0, 0, 0, 1]], dtype=np.float32)
-
-        self.view_matrix = np.linalg.inv(np.array([
-                    np.append(-self.left_direction, 0),
-                    np.append(self.up_direction, 0),
-                    np.append(-self.view_direction, 0),
-                    np.append(self.position, 1)
-                ], dtype=np.float32))
-
-        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, self.view_matrix)
-
-    def get_ray(self) -> tuple:
-
-        return self.position, self.view_direction
-
-    def get_ray_through_screen_pos(self, x, y):
-
-        # width, height = self.screen_size
-        # x_ndc = (2.0 * x) / width - 1.0
-        # y_ndc = 1.0 - (2.0 * y) / height
-        # x_norm = (x/(width-1))*2-1
-        # y_norm = 1-(y/(height-1))*2
-        # print(f"norm: {x_norm:.4f}, {y_norm:.4f}")
-        # print(f"ndc:  {x_ndc:.4f}, {y_ndc:.4f}")
-        # z_ndc = -self.near
-        # w_ndc = 1.0
-        # ndc_coords = np.array([x_ndc, y_ndc, z_ndc, w_ndc])
-        # projection_matrix_inv = np.linalg.inv(self.projection_matrix)
-        # camera_coords = projection_matrix_inv.dot(ndc_coords)
-        # camera_coords = projection_matrix_inv.dot(ndc_coords)
-        # camera_coords /= camera_coords[3]
-        # ray_direction = camera_coords[:3]
-        # ray_direction = ray_direction / np.linalg.norm(ray_direction)
-        # ray_direction_world = self.view_matrix[:3, :3].dot(ray_direction)
-        # return self.position, ray_direction_world
-
-        width, height = self.screen_size
-        x_norm = (x/(width-1))*2-1
-        y_norm = 1-(y/(height-1))*2
-        print(f"{x},{y}, norm: {x_norm:.4f}, {y_norm:.4f}", end=", ")
-
-        fov_x = self.fov
-        x_length = np.tan(fov_x / 2)
-        y_length = x_length / self.aspect
-
-        x_click_length = x_length*x_norm
-        y_click_length = y_length*y_norm
-        print(f"clicklengths: {x_click_length:.4f}, {y_click_length:.4f}", end=", ")
-
-        yaw_angle = -np.arctan(x_click_length)
-        pitch_angle = -np.arctan(y_click_length)
-        print(f"angles: {np.degrees(yaw_angle):.4f}, {np.degrees(pitch_angle):.4f}", end=", ")
-
-        direction = Camera.rotation_matrix(self.up_direction, yaw_angle).dot(Camera.rotation_matrix(self.left_direction, pitch_angle).dot(self.view_direction))
-
-        return self.position, direction
-
-    def translate_forward(self, distance: float):
-
-        self.position += distance * self.view_direction
-
-    def translate_left(self, distance: float):
-
-        self.position += distance * self.left_direction
-
-    def translate_up(self, distance: float):
-
-        self.position += distance * self.up_direction
 
 class App:
 
@@ -212,7 +61,8 @@ class App:
         self.f1_state_flag = False
         self.mouse_cursor_enabled = True
 
-        self.main_loop()
+        # print(f"view_matrix:\n{self.camera.view_matrix}")
+        # print(f"projection_matrix:\n{self.camera.projection_matrix}")
 
     def raycasting_xy_plane(self, ray_pos, ray_dir):
 
@@ -269,31 +119,12 @@ class App:
             hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
 
         if hit_position is not None:
-
             field_x, field_y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
-
-            cell = self.minesweeperBoard.get_cell(field_x, field_y)
-            if cell is not None:
-                call(cell)
-                self.update_mine_field_quad()
-        
-        print(f"hit: {hit_position[0]:.4f}, {hit_position[1]:.4f}, {hit_position[2]:.4f}")
-
-        c_pos = self.camera.position
-        c_view = self.camera.view_direction
-        c_left = self.camera.left_direction
-        c_up = self.camera.up_direction
-
-        # np.set_printoptions(precision=4) # TODO: remove
-        # print(f"({x}, {y}), ({ray_pos}/{c_pos}), {ray_dir} -> {hit_position[0]:.4f}, {hit_position[1]:.4f}, {hit_position[2]:.4f}") # TODO: remove
-
-        WCS.quiver(c_pos[0], c_pos[1], c_pos[2], c_view[0], c_view[1], c_view[2], color="red")
-        WCS.quiver(c_pos[0], c_pos[1], c_pos[2], c_left[0], c_left[1], c_left[2], color="green")
-        WCS.quiver(c_pos[0], c_pos[1], c_pos[2], c_up[0], c_up[1], c_up[2], color="blue")
-
-        WCS.quiver(ray_pos[0], ray_pos[1], ray_pos[2], ray_dir[0], ray_dir[1], ray_dir[2], color="red")
-        WCS.plot([ray_pos[0], hit_position[0]], [ray_pos[1], hit_position[1]], [ray_pos[2], hit_position[2]], color="red", linestyle="dashdot")
-        WCS.text(hit_position[0], hit_position[1], hit_position[2], f"({x}, {y})", color="red")
+            if field_x >= 0 and field_y >= 0:
+                cell = self.minesweeperBoard.get_cell(field_x, field_y)
+                if cell is not None:
+                    call(cell)
+                    self.update_mine_field_quad()
 
     def update_mine_field_quad(self):
 
@@ -317,11 +148,6 @@ class App:
         if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
             self.minesweeperBoard.print()
             print("\n")
-        if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
-            print(self.camera.position)
-            print(self.camera.view_direction)
-            print(self.camera.left_direction)
-            print(self.camera.up_direction, end="\n\n")
 
         t = glfw.get_time()
         dt = t - self.last_time
@@ -329,6 +155,8 @@ class App:
 
         speed = 2.0
         distance = speed * dt
+        roll_speed = np.pi / 2
+        roll_angle = roll_speed * dt
         if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
             self.camera.translate_forward(distance)
         elif glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
@@ -344,6 +172,11 @@ class App:
         elif glfw.get_key(self.window, glfw.KEY_C) == glfw.PRESS:
             self.camera.translate_up(-distance)
 
+        if glfw.get_key(self.window, glfw.KEY_Q) == glfw.PRESS:
+            self.camera.rotate_roll(roll_angle)
+        elif glfw.get_key(self.window, glfw.KEY_E) == glfw.PRESS:
+            self.camera.rotate_roll(-roll_angle)
+
         if glfw.get_key(self.window, glfw.KEY_F1) == glfw.PRESS:
             if not self.f1_state_flag:
                 self.toggle_mouse_cursor()
@@ -355,7 +188,15 @@ class App:
             self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
             self.update_mine_field_quad()
 
-        self.camera.update_view()
+        self.camera.recalculate_view_matrix()
+        self.camera.update_view_matrix()
+
+        if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
+            print(f"pos:  {self.camera.position}")
+            print(f"view: {self.camera.view_direction}")
+            print(f"left: {self.camera.left_direction}")
+            print(f"up:   {self.camera.up_direction}")
+            print(f"view matrix:\n{self.camera.view_matrix}\n")
 
     def toggle_mouse_cursor(self) -> None:
 
@@ -413,19 +254,6 @@ class FieldQuad:
                 vertices.extend(v0)
                 vertices.extend(vts[2])
 
-        vertexes = []
-        for i in range(0, len(vertices), 5):
-            v = (vertices[i],vertices[i+1],vertices[i+2])
-            if v in vertexes:
-                continue
-            vertexes.append(v)
-        x,y,z = [],[],[]
-        for v in vertexes:
-            x.append(v[0])
-            y.append(v[1])
-            z.append(v[2])
-        WCS.scatter(x, y, z, color="black")
-
         self.vertex_count = len(vertices) // 5
         self.vertices = np.array(vertices, dtype=np.float32)
 
@@ -473,25 +301,7 @@ class Texture:
 
 
 
-
-
-
-
-
-
-"""
-Debugging through visualization
-"""
-import matplotlib.pyplot as plt
-
-fig = plt.figure()
-WCS = fig.add_subplot(111, projection="3d")
-WCS.set_xlabel("X")
-WCS.set_ylabel("Y")
-WCS.set_zlabel("Z")
-
 if __name__ == "__main__":
-    app = App()
 
-WCS.axis("equal")
-plt.show()
+    app = App()
+    app.main_loop()

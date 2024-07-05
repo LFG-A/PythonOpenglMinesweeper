@@ -1,6 +1,9 @@
 import random
 
+
+
 class MinesweeperBoard:
+
     def __init__(self,
                  size_x: int,
                  size_y: int,
@@ -70,6 +73,7 @@ class MinesweeperBoard:
         cell.flagged = not cell.flagged
     
     def get_cell(self, x: int, y: int):
+
         index = y * self.size_x + x
         if index < 0 or index >= self.size_x * self.size_y:
             return None
@@ -156,7 +160,10 @@ class MinesweeperCell:
                 return '\u2591'
             return f"{self.adjacent_bombs}"
 
+
+
 if __name__ == "__main__":
+
     mboard = MinesweeperBoard(20, 10, 20, 1)
     # mboard = MinesweeperBoard(10, 10, 10, 1)
     mboard.print()
