@@ -4,86 +4,12 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
 from PIL import Image
 
+
+
 from minesweeper import *
+from camera import Camera
 
-class Camera:
 
-    def __init__(self,
-                 shader,
-                 fov,
-                 screen_size,
-                 near,
-                 far,
-                 position,
-                 euler_rotation):
-
-        self.shader = shader
-
-        self.fov = fov
-        self.screen_size = screen_size
-        self.near = near
-        self.far = far
-
-        self.position = position
-        self.euler_rotation = euler_rotation
-
-        self.projectionMatrixLocation = glGetUniformLocation(self.shader, "projection")
-        self.update_projection()
-
-        self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
-        self.update_view()
-
-    def __setattr__(self, name: str, value) -> None:
-        # raise AttributeError(f"Attribute '{name}' is read-only")
-        super().__setattr__(name, value)
-
-    def get_projection_matrix(self) -> np.ndarray:
-
-        return self.projection_matrix
-
-    def update_projection(self):
-
-        aspect = self.screen_size[0]/self.screen_size[1]
-        f = 1.0 / np.tan(self.fov / 2.0)
-        a = (self.far + self.near) / (self.near - self.far)
-        b = (2.0 * self.far * self.near) / (self.near - self.far)
-        self.projection_matrix = np.array([[f / aspect, 0, 0, 0],
-                                           [0, f, 0, 0],
-                                           [0, 0, a, -1],
-                                           [0, 0, b, 0]], dtype=np.float32)
-
-        glUniformMatrix4fv(self.projectionMatrixLocation, 1, GL_FALSE, self.projection_matrix)
-
-    def get_view_matrix(self) -> np.ndarray:
-
-        return self.view_matrix
-
-    def update_view(self):
-
-        self.view_matrix = np.array([[1, 0, 0, self.position[0]],
-                                     [0, 1, 0, self.position[1]],
-                                     [0, 0, 1, self.position[2]],
-                                     [0, 0, 0, 1]], dtype=np.float32)
-
-        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_TRUE, self.view_matrix)
-
-    def get_ray(self) -> tuple:
-
-        # ray is a vector starting at the camera position and pointing into the direction of the camera
-        # the ray is defined by a point and a direction vector
-
-        # the direction is the negative z-axis of the camera
-        direction = np.array([0, 0, 1], dtype=np.float32)
-
-        return self.position, direction
-
-    def get_ray_through_screen_pos(self, x, y):
-
-        pos, dir = self.get_ray()
-
-        direction = dir
-
-        return pos, direction
 
 class App:
 
@@ -118,22 +44,30 @@ class App:
         self.mine_field_quad = FieldQuad(self.minesweeperBoard, self.cell_size)
         self.texture = Texture("textures/atlas.png")
 
-        self.camera = Camera(self.shader, np.radians(90), screen_size, 0.1, 100.0, [-(self.minesweeperBoard.size_x*self.cell_size)/2, -(self.minesweeperBoard.size_y*self.cell_size)/2, -5], [0, 0, 0])
+        camera_position = np.array([(self.minesweeperBoard.size_x*self.cell_size)/2, (self.minesweeperBoard.size_y*self.cell_size)/2, 5], dtype=np.float32)
+        camera_view_direction = np.array([0, 0, -1], dtype=np.float32)
+        camera_left_direction = np.array([-1, 0, 0], dtype=np.float32)
+        camera_up_direction = np.array([0, 1, 0], dtype=np.float32)
+        self.camera = Camera(self.shader, screen_size=screen_size, position=camera_position, view_direction=camera_view_direction, left_direction=camera_left_direction, up_direction=camera_up_direction)
 
         self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
         model_matrix = np.array([[1, 0, 0, 0],
                                  [0, 1, 0, 0],
                                  [0, 0, 1, 0],
                                  [0, 0, 0, 1]], dtype=np.float32)
-        glUniformMatrix4fv(self.modelMatrixLocation, 1, GL_TRUE, model_matrix)
+        glUniformMatrix4fv(self.modelMatrixLocation, 1, GL_FALSE, model_matrix)
 
         self.last_time = glfw.get_time()
         self.f1_state_flag = False
         self.mouse_cursor_enabled = True
 
-        self.main_loop()
+        # print(f"view_matrix:\n{self.camera.view_matrix}")
+        # print(f"projection_matrix:\n{self.camera.projection_matrix}")
 
     def raycasting_xy_plane(self, ray_pos, ray_dir):
+
+        if ray_pos[2] == 0:
+            return ray_pos
 
         if ray_dir[2] == 0:
             return None
@@ -143,14 +77,18 @@ class App:
             return None
 
         hit_position = ray_pos + a * ray_dir
+        if hit_position[2] != 0:
+            Warning(f"Ray {ray_pos}, {ray_dir} does not hit the xy-plane in {hit_position}")
+            hit_position[2] = 0
 
         return hit_position
 
-    def create_shader(self, vertex_file_path, fragment_file_path):
+    @staticmethod
+    def create_shader(vertex_file_path, fragment_file_path):
 
-        with open(vertex_file_path, 'r') as file:
+        with open(vertex_file_path, "r") as file:
             vertex_src = file.readlines()
-        with open(fragment_file_path, 'r') as file:
+        with open(fragment_file_path, "r") as file:
             fragment_src = file.readlines()
 
         shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
@@ -160,9 +98,8 @@ class App:
 
     def mouse_button_callback(self, window, button, action, mods):
 
-        x, y = glfw.get_cursor_pos(window)
-
         if action == glfw.PRESS:
+            x, y = glfw.get_cursor_pos(window)
             self.on_mouse_click(button, int(x), int(y))
 
     def on_mouse_click(self, button, x, y):
@@ -177,42 +114,17 @@ class App:
         if self.mouse_cursor_enabled:
             ray_pos, ray_dir = self.camera.get_ray_through_screen_pos(x, y)
             hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
-
-            ray_pos, ray_dir = self.camera.get_ray()
-            hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
-            v = np.array([-1*hit_position[0], -1*hit_position[1], -1*hit_position[2], 1])
-            # print(f"{v} -> {v@self.camera.get_projection_matrix()@self.camera.get_view_matrix()}") # TODO: remove
         else:
             ray_pos, ray_dir = self.camera.get_ray()
             hit_position = self.raycasting_xy_plane(ray_pos, ray_dir)
-            hit_position = -1 * hit_position
-
-        # TODO: remove
-        # print(f"screen pixel: {x}, {y}")
-        # print(f"view: {self.camera.get_view_matrix()}")
-        # print(f"proj: {self.camera.get_projection_matrix()}")
-        # print(f"ray: {ray_pos, ray_dir}")
-        # print(f"world coord: {hit_position}")
-
-        # minefield is a rectangle area in the x-y-plane, the z-coordinate is 0
-        # x, y coordinates are in [0, size_x*cell_size], [0, size_y*cell_size]
 
         if hit_position is not None:
-
-            max_x = self.minesweeperBoard.size_x * self.cell_size
-            if hit_position[0] < 0 or hit_position[0] > max_x:
-                return
-            max_y = self.minesweeperBoard.size_y * self.cell_size
-            if hit_position[1] < 0 or hit_position[1] > max_y:
-                return
-
-            x, y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
-
-            # print(f"game cell: {x}, {y}") # TODO: remove
-
-            call(self.minesweeperBoard.get_cell(x, y))
-
-            self.update_mine_field_quad()
+            field_x, field_y = int(hit_position[0] // self.cell_size), int(hit_position[1] // self.cell_size)
+            if field_x >= 0 and field_y >= 0:
+                cell = self.minesweeperBoard.get_cell(field_x, field_y)
+                if cell is not None:
+                    call(cell)
+                    self.update_mine_field_quad()
 
     def update_mine_field_quad(self):
 
@@ -235,29 +147,35 @@ class App:
 
         if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
             self.minesweeperBoard.print()
-            print()
-        if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
-            print(self.camera.position)
+            print("\n")
 
         t = glfw.get_time()
         dt = t - self.last_time
         self.last_time = t
 
         speed = 2.0
+        distance = speed * dt
+        roll_speed = np.pi / 2
+        roll_angle = roll_speed * dt
         if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
-            self.camera.position[2] += speed * dt
+            self.camera.translate_forward(distance)
         elif glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
-            self.camera.position[2] -= speed * dt
+            self.camera.translate_forward(-distance)
 
         if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
-            self.camera.position[0] += speed * dt
+            self.camera.translate_left(distance)
         elif glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
-            self.camera.position[0] -= speed * dt
+            self.camera.translate_left(-distance)
 
         if glfw.get_key(self.window, glfw.KEY_SPACE) == glfw.PRESS:
-            self.camera.position[1] -= speed * dt
+            self.camera.translate_up(distance)
         elif glfw.get_key(self.window, glfw.KEY_C) == glfw.PRESS:
-            self.camera.position[1] += speed * dt
+            self.camera.translate_up(-distance)
+
+        if glfw.get_key(self.window, glfw.KEY_Q) == glfw.PRESS:
+            self.camera.rotate_roll(roll_angle)
+        elif glfw.get_key(self.window, glfw.KEY_E) == glfw.PRESS:
+            self.camera.rotate_roll(-roll_angle)
 
         if glfw.get_key(self.window, glfw.KEY_F1) == glfw.PRESS:
             if not self.f1_state_flag:
@@ -270,7 +188,15 @@ class App:
             self.minesweeperBoard = MinesweeperBoard(10, 10, 10, 0)
             self.update_mine_field_quad()
 
-        self.camera.update_view()
+        self.camera.recalculate_view_matrix()
+        self.camera.update_view_matrix()
+
+        if glfw.get_key(self.window, glfw.KEY_O) == glfw.PRESS:
+            print(f"pos:  {self.camera.position}")
+            print(f"view: {self.camera.view_direction}")
+            print(f"left: {self.camera.left_direction}")
+            print(f"up:   {self.camera.up_direction}")
+            print(f"view matrix:\n{self.camera.view_matrix}\n")
 
     def toggle_mouse_cursor(self) -> None:
 
@@ -301,7 +227,7 @@ class FieldQuad:
 
     def __init__(self, minesweeper, cell_size):
 
-        # x, y, z, s, t
+        # vertices = [x, y, z, s, t]
         vertices = []
         size_x, size_y = minesweeper.size_x, minesweeper.size_y
         for y in range(size_y):
@@ -327,33 +253,6 @@ class FieldQuad:
                 vertices.extend(vts[3])
                 vertices.extend(v0)
                 vertices.extend(vts[2])
-
-        # import matplotlib.pyplot as plt
-
-        # fig = plt.figure()
-        # ax = fig.add_subplot(111, projection='3d')
-
-        # vertexes = []
-        # for i in range(0, len(vertices), 5):
-        #     v = (vertices[i],vertices[i+1],vertices[i+2])
-        #     if v in vertexes:
-        #         continue
-        #     vertexes.append(v)
-
-        # x,y,z = [],[],[]
-        # for v in vertexes:
-        #     x.append(v[0])
-        #     y.append(v[1])
-        #     z.append(v[2])
-        # ax.scatter(x, y, z)
-
-        # ax.set_xlabel('X')
-        # ax.set_ylabel('Y')
-        # ax.set_zlabel('Z')
-
-        # ax.axis('equal')
-
-        # plt.show()
 
         self.vertex_count = len(vertices) // 5
         self.vertices = np.array(vertices, dtype=np.float32)
@@ -400,5 +299,9 @@ class Texture:
 
         glDeleteTextures(1, (self.texture,))
 
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
+
     app = App()
+    app.main_loop()
