@@ -6,6 +6,8 @@ import numpy as np
 
 
 from camera import Camera
+from texture import Texture
+from testcube import Object
 
 
 
@@ -26,17 +28,19 @@ class App:
         glfw.make_context_current(self.window)
 
         glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
+        self.last_x, self.last_y = glfw.get_cursor_pos(self.window)
+        glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
 
-        glClearColor(gl_clear_color)
+        glClearColor(gl_clear_color[0], gl_clear_color[1], gl_clear_color[2], gl_clear_color[3])
         glEnable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        self.shader = {}
-        self.textures = []
+        self.shaders = {}
+        self.textures = {}
         self.static_objects = []
         self.dynamic_objects = []
-        self.camera = Camera(self.shader, screen_size=screen_size)
+        self.camera = Camera(screen_size=screen_size)
 
         self.f1_state_flag = False
         self.mouse_cursor_enabled = True
@@ -45,8 +49,8 @@ class App:
 
         shader_key = (vertex_file_path, fragment_file_path)
 
-        if shader_key in self.shader:
-            return self.shader_dict[vertex_file_path]
+        if shader_key in self.shaders:
+            return self.shaders[vertex_file_path]
 
         else:
             with open(vertex_file_path, "r") as file:
@@ -54,10 +58,14 @@ class App:
             with open(fragment_file_path, "r") as file:
                 fragment_src = file.readlines()
 
+            print(f"Loading shader: {shader_key}")
             shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
                                     compileShader(fragment_src, GL_FRAGMENT_SHADER))
 
-            self.shader_dict[shader_key] = shader
+            self.shaders[shader_key] = shader
+
+            projectionMatrixLocation = glGetUniformLocation(shader, "projection")
+            glUniformMatrix4fv(projectionMatrixLocation, 1, GL_FALSE, self.camera.projection_matrix)
 
             return shader
 
@@ -80,6 +88,25 @@ class App:
             x, y = glfw.get_cursor_pos(window)
             print(f"Mouse button {button} pressed at {x}, {y}")
 
+    def cursor_pos_callback(self, window, xpos, ypos):
+        if xpos == self.last_x and ypos == self.last_y:
+            return
+
+        lx = self.last_x
+        ly = self.last_y
+        self.last_x = xpos
+        self.last_y = ypos
+
+        if self.mouse_cursor_enabled:
+            return
+        else:
+            mouse_x_sensitivity = 0.1
+            mouse_y_sensitivity = 0.1
+            d_pitch = (xpos - lx) * mouse_x_sensitivity
+            d_yaw = (ypos - ly) * mouse_y_sensitivity
+            self.camera.rotate_pitch(d_pitch)
+            self.camera.rotate_yaw(d_yaw)
+
     def main_loop(self):
 
         dt = 0
@@ -87,7 +114,7 @@ class App:
 
         while not glfw.window_should_close(self.window):
 
-            dt = last_time - self.last_time
+            dt = last_time - last_time
             last_time = glfw.get_time()
 
             glfw.poll_events()
@@ -136,14 +163,12 @@ class App:
         else:
             self.f1_state_flag = False
 
-        self.camera.recalculate_view_matrix()
-        self.camera.update_view_matrix()
-
         if glfw.get_key(self.window, glfw.KEY_P) == glfw.PRESS:
             print(f"pos:  {self.camera.position}")
             print(f"view: {self.camera.view_direction}")
             print(f"left: {self.camera.left_direction}")
             print(f"up:   {self.camera.up_direction}")
+            self.camera.recalculate_view_matrix()
             print(f"view matrix:\n{self.camera.view_matrix}\n")
 
     def toggle_mouse_cursor(self) -> None:
@@ -157,6 +182,11 @@ class App:
     def render(self):
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        self.camera.recalculate_view_matrix()
+        for shader in self.shaders.values():
+            viewMatrixLocation = glGetUniformLocation(shader, "view")
+            glUniformMatrix4fv(viewMatrixLocation, 1, GL_TRUE, self.camera.view_matrix)
 
         for object in self.static_objects:
             object.render()
@@ -172,17 +202,28 @@ class App:
         for object in self.dynamic_objects:
             object.destroy()
 
-        for texture in self.textures:
+        for texture in self.textures.values():
             texture.destroy()
 
-        for shader in self.shaders:
-            shader.destroy()
+        for shader in self.shaders.values():
+            glDeleteProgram(shader)
 
         glfw.terminate()
+
+    def add_object(self, object: Object):
+
+        if object.wants_update():
+            self.dynamic_objects.append(object)
+        else:
+            self.static_objects.append(object)
 
 
 
 if __name__ == "__main__":
 
     app = App()
+    testcube = Object.get_basic_cube(app)
+    app.add_object(testcube)
+    print(f"camera: {app.camera.position}")
+    print(f"{testcube.name}: {testcube.transform.position}")
     app.main_loop()
