@@ -60,7 +60,9 @@ class MinesweeperBoard:
         self.revealed_cells += 1
 
         if cell.bomb:
-            return False
+            for cell in self.board:
+                if not cell.revealed:
+                    self.reveal_cell(cell)
 
         if cell.adjacent_bombs == 0:
             for adjacent_cell in cell.adjacent_cells:

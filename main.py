@@ -30,6 +30,8 @@ class App:
         glfw.make_context_current(self.window)
 
         glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
+        self.last_x, self.last_y = glfw.get_cursor_pos(self.window)
+        glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
 
         glClearColor(0.2, 0.2, 0.2, 1.0)
         glEnable(GL_BLEND)
@@ -101,6 +103,25 @@ class App:
         if action == glfw.PRESS:
             x, y = glfw.get_cursor_pos(window)
             self.on_mouse_click(button, int(x), int(y))
+
+    def cursor_pos_callback(self, window, xpos, ypos):
+        if xpos == self.last_x and ypos == self.last_y:
+            return
+
+        lx = self.last_x
+        ly = self.last_y
+        self.last_x = xpos
+        self.last_y = ypos
+
+        if self.mouse_cursor_enabled:
+            return
+        else:
+            mouse_x_sensitivity = 0.01
+            mouse_y_sensitivity = 0.01
+            d_pitch = (xpos - lx) * mouse_x_sensitivity
+            d_yaw = (ypos - ly) * mouse_y_sensitivity
+            self.camera.rotate_pitch(d_pitch)
+            self.camera.rotate_yaw(d_yaw)
 
     def on_mouse_click(self, button, x, y):
 
